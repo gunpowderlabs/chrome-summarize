@@ -33,11 +33,3 @@ A Chrome extension that summarizes web pages using Claude AI and displays the su
 
 You can customize how Claude summarizes content by editing the `prompt.txt` file. This file contains the system message that guides Claude's summarization style.
 
-## Icon Setup
-
-Before using the extension, you need to create icon files in the `icons` directory:
-- `icon16.png` (16x16 pixels)
-- `icon48.png` (48x48 pixels)
-- `icon128.png` (128x128 pixels)
-
-You can use any image editor to create simple icons, or download placeholder icons from various free icon websites.
