@@ -28,5 +28,14 @@
       "resources": ["prompt.txt"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Summarize the current page"
+    }
+  }
 }

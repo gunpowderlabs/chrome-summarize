@@ -16,8 +16,19 @@ A Chrome extension that summarizes web pages using Claude AI and displays the su
 ## Usage
 
 1. Navigate to any web page
-2. Click the extension icon in your Chrome toolbar
+2. Click the extension icon in your Chrome toolbar or use the keyboard shortcut (Ctrl+Shift+S on Windows/Linux, Command+Shift+S on Mac)
 3. The extension will extract the main content, send it to Claude for summarization, and display the summary in a sidebar
+
+## Keyboard Shortcut
+
+The extension can be triggered using:
+- **Windows/Linux**: `Ctrl+Shift+S`
+- **Mac**: `Command+Shift+S`
+
+You can customize these shortcuts in Chrome by going to:
+1. Navigate to `chrome://extensions/shortcuts`
+2. Find "Page Summarizer" in the list
+3. Click the pencil icon and set your preferred shortcut
 
 ## Customizing the Summary
 
