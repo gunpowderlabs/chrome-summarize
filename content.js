@@ -2,13 +2,29 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'extractContent') {
     const mainContent = extractMainContent();
-    requestSummary(mainContent);
+    // Show loading state in sidebar
+    createOrUpdateSidebar('Generating summary...');
+    
+    if (!mainContent || mainContent.trim().length < 50) {
+      displaySummary('Error: Not enough content found on this page to summarize.');
+      return;
+    }
+    
+    // Send the content to the background script for summarization
+    chrome.runtime.sendMessage({
+      action: 'summarizeContent',
+      content: mainContent
+    });
+    
     // Acknowledge receipt
     sendResponse({ status: 'content extracted' });
     return true; // Keep the message channel open for the async response
   } else if (message.action === 'displaySummary') {
     displaySummary(message.summary);
     sendResponse({ status: 'summary displayed' });
+  } else if (message.action === 'displayError') {
+    displaySummary(`Error: ${message.error}`);
+    sendResponse({ status: 'error displayed' });
   }
   return true; // Keep the message channel open
 });
@@ -33,48 +49,6 @@ function extractMainContent() {
     .join('\n\n');
   
   return paragraphs || document.body.innerText;
-}
-
-// Send content to the server for summarization
-function requestSummary(content) {
-  // Show loading state in sidebar
-  createOrUpdateSidebar('Generating summary...');
-  
-  if (!content || content.trim().length < 50) {
-    displaySummary('Error: Not enough content found on this page to summarize.');
-    return;
-  }
-  
-  // Send the content to our server for summarization
-  fetch('http://localhost:3000/summarize', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ content })
-  })
-  .then(response => {
-    if (!response.ok) {
-      return response.json().then(data => {
-        throw new Error(data.error || `Server error: ${response.status}`);
-      });
-    }
-    return response.json();
-  })
-  .then(data => {
-    if (data.summary) {
-      // Update sidebar with the summary
-      displaySummary(data.summary);
-    } else if (data.error) {
-      displaySummary(`Error: ${data.error}`);
-    } else {
-      displaySummary('Error: Could not generate summary.');
-    }
-  })
-  .catch(error => {
-    console.error('Error:', error);
-    displaySummary(`Error: ${error.message || 'Could not connect to summarization service.'}`);
-  });
 }
 
 // Create or update the sidebar

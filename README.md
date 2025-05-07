@@ -5,23 +5,13 @@ A Chrome extension that summarizes web pages using Claude AI and displays the su
 ## Setup
 
 1. Clone this repository
-2. Copy `.env.example` to `.env` and add your Anthropic API key:
-   ```
-   ANTHROPIC_API_KEY=your_api_key_here
-   ```
-3. Install dependencies:
-   ```
-   npm install
-   ```
-4. Start the backend server:
-   ```
-   npm start
-   ```
-5. Load the extension in Chrome:
+2. Load the extension in Chrome:
    - Go to `chrome://extensions/`
    - Enable Developer mode (toggle in the top right)
    - Click "Load unpacked"
    - Select this project's directory
+3. Click the extension icon in your toolbar
+4. Enter your Anthropic API key in the options page that appears
 
 ## Usage
 
@@ -32,4 +22,10 @@ A Chrome extension that summarizes web pages using Claude AI and displays the su
 ## Customizing the Summary
 
 You can customize how Claude summarizes content by editing the `prompt.txt` file. This file contains the system message that guides Claude's summarization style.
+
+## API Key Configuration
+
+This extension requires an Anthropic API key to function. Your API key is stored securely in Chrome's sync storage and is only used to make API calls to Anthropic's Claude service. You can update or change your API key at any time through the extension's options page.
+
+**Note:** This extension calls the Anthropic API directly from the browser. While convenient for personal use, this method uses the `anthropic-dangerous-direct-browser-access` header, which is not recommended for production applications. For production deployments, consider using a proxy server to handle API calls.
 

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Page Summarizer Options</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 8px 16px;
+      background-color: #4285F4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #3367D6;
+    }
+    .status {
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .success {
+      background-color: #DFF2BF;
+      color: #4F8A10;
+    }
+    .error {
+      background-color: #FFBABA;
+      color: #D8000C;
+    }
+  </style>
+</head>
+<body>
+  <h1>Page Summarizer Options</h1>
+  
+  <div class="form-group">
+    <label for="apiKey">Anthropic API Key:</label>
+    <input type="text" id="apiKey" placeholder="Enter your API key">
+  </div>
+  
+  <div class="form-group">
+    <button id="save">Save</button>
+  </div>
+  
+  <div id="status" class="status" style="display: none;"></div>
+  
+  <script src="options.js"></script>
+</body>
+</html>
