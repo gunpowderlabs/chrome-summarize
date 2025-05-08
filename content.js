@@ -59,35 +59,23 @@ function createOrUpdateSidebar(content) {
     // Create sidebar if it doesn't exist
     sidebar = document.createElement('div');
     sidebar.id = 'claude-summary-sidebar';
-    sidebar.style.position = 'fixed';
-    sidebar.style.top = '0';
-    sidebar.style.right = '0';
-    sidebar.style.width = '300px';
-    sidebar.style.height = '100vh';
-    sidebar.style.backgroundColor = '#fff';
-    sidebar.style.boxShadow = '-2px 0 5px rgba(0,0,0,0.2)';
-    sidebar.style.zIndex = '9999';
-    sidebar.style.padding = '20px';
-    sidebar.style.overflow = 'auto';
-    sidebar.style.transition = 'transform 0.3s ease-in-out';
-    sidebar.style.fontFamily = 'Arial, sans-serif';
-    sidebar.style.lineHeight = '1.6';
-    sidebar.style.fontSize = '14px';
     
     // Add close button
     const closeButton = document.createElement('button');
+    closeButton.id = 'claude-summary-close';
     closeButton.innerText = '×';
-    closeButton.style.position = 'absolute';
-    closeButton.style.top = '10px';
-    closeButton.style.right = '10px';
-    closeButton.style.border = 'none';
-    closeButton.style.background = 'none';
-    closeButton.style.fontSize = '20px';
-    closeButton.style.cursor = 'pointer';
-    closeButton.style.color = '#333';
     closeButton.onclick = () => {
       document.body.removeChild(sidebar);
     };
+    
+    // Inject CSS if not already present
+    if (!document.getElementById('claude-summary-styles')) {
+      const styleSheet = document.createElement('link');
+      styleSheet.id = 'claude-summary-styles';
+      styleSheet.rel = 'stylesheet';
+      styleSheet.href = chrome.runtime.getURL('sidebar.css');
+      document.head.appendChild(styleSheet);
+    }
     
     sidebar.appendChild(closeButton);
     document.body.appendChild(sidebar);
