@@ -115,6 +115,65 @@ function createOrUpdateSidebar(content) {
   const contentDiv = document.createElement('div');
   contentDiv.innerHTML = `<h2>Page Summary</h2><div>${processedContent}</div>`;
   
+  // Add "Copy Sharable Snippet" button
+  const copyButton = document.createElement('button');
+  copyButton.id = 'claude-summary-copy';
+  copyButton.innerText = 'Copy Sharable Snippet';
+  
+  // Check if this is an error message
+  const isError = content.startsWith('Error:');
+  
+  if (isError) {
+    // If it's an error, copy just the URL
+    copyButton.onclick = () => {
+      const url = window.location.href;
+      
+      navigator.clipboard.writeText(url)
+        .then(() => {
+          // Show temporary success message
+          const originalText = copyButton.innerText;
+          copyButton.innerText = 'URL Copied!';
+          setTimeout(() => {
+            copyButton.innerText = originalText;
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('Failed to copy text: ', err);
+          copyButton.innerText = 'Copy failed';
+          setTimeout(() => {
+            copyButton.innerText = 'Copy Sharable Snippet';
+          }, 2000);
+        });
+    };
+  } else {
+    // Normal behavior - copy URL and summary
+    copyButton.onclick = () => {
+      const url = window.location.href;
+      const summaryText = content.replace(/\*\*(.*?)\*\*/g, '$1'); // Remove markdown formatting
+      const snippet = `${url}\n\nTL;DR: ${summaryText}`;
+      
+      navigator.clipboard.writeText(snippet)
+        .then(() => {
+          // Show temporary success message
+          const originalText = copyButton.innerText;
+          copyButton.innerText = 'Copied!';
+          setTimeout(() => {
+            copyButton.innerText = originalText;
+          }, 2000);
+        })
+        .catch(err => {
+          console.error('Failed to copy text: ', err);
+          copyButton.innerText = 'Copy failed';
+          setTimeout(() => {
+            copyButton.innerText = 'Copy Sharable Snippet';
+          }, 2000);
+        });
+    };
+  }
+  
+  contentDiv.appendChild(document.createElement('br'));
+  contentDiv.appendChild(copyButton);
+  
   // Clear previous content (except close button)
   while (sidebar.childNodes.length > 1) {
     sidebar.removeChild(sidebar.lastChild);
