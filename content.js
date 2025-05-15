@@ -5,7 +5,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Show loading state in sidebar
     createOrUpdateSidebar('Generating summary...');
     
-    if (!mainContent || mainContent.trim().length < 50) {
+    if (!mainContent || mainContent.trim().length < 30) {
       displaySummary('Error: Not enough content found on this page to summarize.');
       return;
     }
@@ -31,24 +31,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Extract main content from the page
 function extractMainContent() {
-  // Simple content extraction logic
-  // This can be improved with more sophisticated content extraction
+  // More comprehensive content extraction logic
+  
+  // Try common content container elements first
   const article = document.querySelector('article') || 
                  document.querySelector('main') || 
                  document.querySelector('.content') || 
-                 document.querySelector('#content');
+                 document.querySelector('#content') ||
+                 document.querySelector('.article') ||
+                 document.querySelector('.post') ||
+                 document.querySelector('.entry') ||
+                 document.querySelector('[role="main"]');
   
-  if (article) {
+  if (article && article.innerText.trim().length > 50) {
     return article.innerText;
+  }
+  
+  // Try to find the text-richest div that's not too small
+  const contentDivs = Array.from(document.querySelectorAll('div'))
+    .filter(div => {
+      const text = div.innerText || '';
+      return text.length > 200 && div.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 0;
+    })
+    .sort((a, b) => (b.innerText || '').length - (a.innerText || '').length);
+  
+  if (contentDivs.length > 0) {
+    return contentDivs[0].innerText;
   }
   
   // Fallback: get all paragraphs with reasonable length
   const paragraphs = Array.from(document.querySelectorAll('p'))
-    .filter(p => p.innerText.length > 50)
+    .filter(p => (p.innerText || '').length > 30)
     .map(p => p.innerText)
     .join('\n\n');
   
-  return paragraphs || document.body.innerText;
+  if (paragraphs && paragraphs.length > 100) {
+    return paragraphs;
+  }
+  
+  // Last resort: use body text but try to filter out navigation and UI elements
+  const bodyText = document.body.innerText;
+  if (bodyText && bodyText.length > 200) {
+    return bodyText;
+  }
+  
+  return '';
 }
 
 // Create or update the sidebar
