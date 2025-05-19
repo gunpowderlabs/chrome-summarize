@@ -32,19 +32,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Extract main content from the page
 function extractMainContent() {
   // More comprehensive content extraction logic
-  
+
   // Try common content container elements first
-  const article = document.querySelector('article') || 
-                 document.querySelector('main') || 
-                 document.querySelector('.content') || 
+  const article = document.querySelector('article') ||
+                 document.querySelector('main') ||
+                 document.querySelector('.content') ||
                  document.querySelector('#content') ||
                  document.querySelector('.article') ||
                  document.querySelector('.post') ||
                  document.querySelector('.entry') ||
                  document.querySelector('[role="main"]');
-  
+
   if (article && article.innerText.trim().length > 50) {
-    return article.innerText;
+    return getCleanText(article);
   }
   
   // Try to find the text-richest div that's not too small
@@ -56,7 +56,7 @@ function extractMainContent() {
     .sort((a, b) => (b.innerText || '').length - (a.innerText || '').length);
   
   if (contentDivs.length > 0) {
-    return contentDivs[0].innerText;
+    return getCleanText(contentDivs[0]);
   }
   
   // Fallback: get all paragraphs with reasonable length
@@ -185,4 +185,19 @@ function createOrUpdateSidebar(content) {
 // Display the summary in the sidebar
 function displaySummary(summary) {
   createOrUpdateSidebar(summary);
+}
+
+// Remove obvious comment or feedback sections from an element and return text
+function getCleanText(element) {
+  if (!element) return '';
+  const clone = element.cloneNode(true);
+  const selectors = [
+    '#comments', '.comments', '[id*="comment"]', '[class*="comment"]',
+    '#disqus_thread', '.disqus', '[id*="reply"]', '.reply',
+    '#feedback-box', '#feedback-confirmation-box'
+  ];
+  selectors.forEach(sel => {
+    clone.querySelectorAll(sel).forEach(el => el.remove());
+  });
+  return clone.innerText.trim();
 }
