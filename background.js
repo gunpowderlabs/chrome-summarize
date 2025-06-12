@@ -19,6 +19,9 @@ chrome.action.onClicked.addListener((tab) => {
 // Listen for API requests from content script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'summarizeContent') {
+    // Start progress tracking
+    const startTime = Date.now();
+    
     summarizeWithAnthropic(message.content)
       .then(summary => {
         // Send the summary back to the content script
@@ -29,9 +32,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .catch(error => {
         console.error('Error:', error);
+        let errorMessage = error.message || 'Error generating summary.';
+        
+        // Enhance error messages based on error type
+        if (error.message && error.message.includes('401')) {
+          errorMessage = 'Invalid API key. Please check your Anthropic API key in the extension settings.';
+        } else if (error.message && error.message.includes('429')) {
+          errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
+        } else if (error.message && error.message.includes('500')) {
+          errorMessage = 'Anthropic API is experiencing issues. Please try again later.';
+        } else if (error.message && error.message.includes('network')) {
+          errorMessage = 'Network error. Please check your internet connection and try again.';
+        }
+        
         chrome.tabs.sendMessage(sender.tab.id, {
           action: 'displayError',
-          error: error.message || 'Error generating summary.'
+          error: errorMessage
         });
       });
     
@@ -66,7 +82,7 @@ async function summarizeWithAnthropic(content) {
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-3-7-sonnet-20250219',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 1000,
       temperature: 0.7,
       system: promptTemplate,
