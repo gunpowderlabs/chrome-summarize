@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Page Summarizer",
-  "version": "1.3",
+  "version": "1.4",
   "description": "Summarizes web pages using Claude AI",
   "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["https://api.anthropic.com/*"],
+  "host_permissions": ["https://api.anthropic.com/*", "https://readwise.io/*"],
   "action": {
     "default_title": "Summarize Page",
     "default_icon": {

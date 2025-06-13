@@ -53,6 +53,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ]);
     }
     sendResponse({ status: 'error displayed' });
+  } else if (message.action === 'readwiseSaveSuccess') {
+    showReadwiseSuccess(message.result);
+    sendResponse({ status: 'readwise save success displayed' });
+  } else if (message.action === 'readwiseSaveError') {
+    showReadwiseError(message.error);
+    sendResponse({ status: 'readwise save error displayed' });
+  } else if (message.action === 'readwiseTagsReceived') {
+    handleReadwiseTagsReceived(message.tags);
+    sendResponse({ status: 'readwise tags received' });
+  } else if (message.action === 'readwiseTagsError') {
+    showReadwiseError(message.error);
+    sendResponse({ status: 'readwise tags error displayed' });
   }
   return true; // Keep the message channel open
 });
@@ -136,12 +148,31 @@ function createOrUpdateSidebar(content) {
     document.body.appendChild(sidebar);
   }
   
+  // Parse summary and tags
+  const parts = content.split('\nTAGS:');
+  let summaryText = parts[0];
+  let suggestedTags = [];
+  
+  if (parts.length > 1) {
+    suggestedTags = parts[1].split(',').map(tag => tag.trim()).filter(tag => tag);
+  }
+  
   // Process markdown-style bold formatting
-  const processedContent = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  const processedContent = summaryText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   
   // Update content
   const contentDiv = document.createElement('div');
   contentDiv.innerHTML = `<h2>Page Summary</h2><div>${processedContent}</div>`;
+  
+  // Add suggested tags display if available (only show if Readwise is not enabled)
+  chrome.storage.sync.get(['enableReadwise', 'readwiseToken'], function(result) {
+    if (suggestedTags.length > 0 && (!result.enableReadwise || !result.readwiseToken)) {
+      const tagsDiv = document.createElement('div');
+      tagsDiv.className = 'claude-suggested-tags';
+      tagsDiv.innerHTML = `<div style="margin-top: 10px; font-size: 12px; color: #666;"><strong>Suggested tags:</strong> ${suggestedTags.join(', ')}</div>`;
+      contentDiv.appendChild(tagsDiv);
+    }
+  });
   
   // Add "Copy Sharable Snippet" button
   const copyButton = document.createElement('button');
@@ -177,8 +208,8 @@ function createOrUpdateSidebar(content) {
     // Normal behavior - copy URL and summary
     copyButton.onclick = () => {
       const url = window.location.href;
-      const summaryText = content.replace(/\*\*(.*?)\*\*/g, '$1'); // Remove markdown formatting
-      const snippet = `${url}\n\nTL;DR: ${summaryText}`;
+      const summaryTextForCopy = summaryText.replace(/\*\*(.*?)\*\*/g, '$1'); // Remove markdown formatting
+      const snippet = `${url}\n\nTL;DR: ${summaryTextForCopy}`;
       
       navigator.clipboard.writeText(snippet)
         .then(() => {
@@ -199,8 +230,27 @@ function createOrUpdateSidebar(content) {
     };
   }
   
-  contentDiv.appendChild(document.createElement('br'));
-  contentDiv.appendChild(copyButton);
+  // Create Readwise button
+  const readwiseButton = document.createElement('button');
+  readwiseButton.id = 'claude-summary-readwise';
+  readwiseButton.innerText = 'Save to Readwise';
+  readwiseButton.style.marginLeft = '10px';
+  readwiseButton.style.backgroundColor = '#2563eb';
+  readwiseButton.onclick = () => {
+    showReadwiseUI(summaryText, suggestedTags, contentDiv);
+  };
+  
+  // Create button container
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.marginTop = '10px';
+  buttonContainer.appendChild(copyButton);
+  
+  // Only add Readwise button if it's not an error
+  if (!isError) {
+    buttonContainer.appendChild(readwiseButton);
+  }
+  
+  contentDiv.appendChild(buttonContainer);
   
   // Clear previous content (except close button)
   while (sidebar.childNodes.length > 1) {
@@ -391,4 +441,248 @@ function retryWithDelay() {
   setTimeout(() => {
     chrome.runtime.sendMessage({ action: 'extractContent' });
   }, delay);
+}
+
+// Global variables for Readwise functionality
+let currentReadwiseTags = [];
+let currentSummaryForSave = '';
+let currentSuggestedTags = [];
+let currentContentDiv = null;
+
+// Show Readwise UI inline below the button
+function showReadwiseUI(summary, suggestedTags, contentDiv) {
+  currentSummaryForSave = summary;
+  currentSuggestedTags = suggestedTags || [];
+  currentContentDiv = contentDiv;
+  
+  // Check if Readwise is enabled
+  chrome.storage.sync.get(['enableReadwise', 'readwiseToken'], function(result) {
+    if (!result.enableReadwise || !result.readwiseToken) {
+      showError('Readwise Not Configured', 'Please enable Readwise integration and set your API token in the extension settings.', [
+        { text: 'Open Settings', action: () => chrome.runtime.openOptionsPage() }
+      ]);
+      return;
+    }
+    
+    // Show loading state in inline UI
+    showReadwiseLoadingState();
+    
+    // Get existing Readwise tags
+    chrome.runtime.sendMessage({ action: 'getReadwiseTags' });
+  });
+}
+
+// Show loading state for Readwise
+function showReadwiseLoadingState() {
+  if (!currentContentDiv) return;
+  
+  // Remove existing Readwise UI if present
+  const existingReadwiseUI = currentContentDiv.querySelector('.claude-readwise-inline');
+  if (existingReadwiseUI) {
+    existingReadwiseUI.remove();
+  }
+  
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'claude-readwise-inline';
+  loadingDiv.innerHTML = `
+    <div style="margin-top: 15px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 4px; background-color: #f9fafb;">
+      <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Loading your Readwise tags...</div>
+    </div>
+  `;
+  
+  currentContentDiv.appendChild(loadingDiv);
+}
+
+// Handle received Readwise tags
+function handleReadwiseTagsReceived(tags) {
+  currentReadwiseTags = tags;
+  displayReadwiseInlineUI();
+}
+
+// Display the Readwise tag selection UI inline
+function displayReadwiseInlineUI() {
+  if (!currentContentDiv) return;
+  
+  // Remove existing Readwise UI if present
+  const existingReadwiseUI = currentContentDiv.querySelector('.claude-readwise-inline');
+  if (existingReadwiseUI) {
+    existingReadwiseUI.remove();
+  }
+  
+  // Create inline UI container
+  const readwiseContainer = document.createElement('div');
+  readwiseContainer.className = 'claude-readwise-inline';
+  readwiseContainer.style.marginTop = '15px';
+  readwiseContainer.style.padding = '15px';
+  readwiseContainer.style.border = '1px solid #e5e7eb';
+  readwiseContainer.style.borderRadius = '6px';
+  readwiseContainer.style.backgroundColor = '#f9fafb';
+  
+  const title = document.createElement('div');
+  title.innerHTML = '<strong>Save to Readwise</strong>';
+  title.style.marginBottom = '10px';
+  title.style.fontSize = '14px';
+  
+  // Combined tags section - show suggested tags first (pre-selected), then remaining tags
+  if (currentReadwiseTags.length > 0) {
+    const tagsSection = document.createElement('div');
+    tagsSection.innerHTML = '<div style="margin-bottom: 8px; font-size: 12px; color: #666;"><strong>Select tags:</strong></div>';
+    
+    const tagsContainer = document.createElement('div');
+    tagsContainer.className = 'claude-tags-container';
+    tagsContainer.style.maxHeight = '120px';
+    tagsContainer.style.overflowY = 'auto';
+    tagsContainer.style.marginBottom = '10px';
+    
+    // First add suggested tags (pre-selected)
+    currentSuggestedTags.forEach(suggestedTag => {
+      const matchingTag = currentReadwiseTags.find(tag => tag.name === suggestedTag);
+      if (matchingTag) {
+        const tagButton = document.createElement('button');
+        tagButton.className = 'claude-tag-button suggested selected';
+        tagButton.textContent = matchingTag.name;
+        tagButton.style.backgroundColor = '#2563eb';
+        tagButton.style.color = 'white';
+        tagButton.onclick = () => toggleTagSelection(tagButton, matchingTag.name);
+        tagsContainer.appendChild(tagButton);
+      }
+    });
+    
+    // Then add remaining tags (not suggested)
+    currentReadwiseTags.forEach(tag => {
+      if (!currentSuggestedTags.includes(tag.name)) {
+        const tagButton = document.createElement('button');
+        tagButton.className = 'claude-tag-button';
+        tagButton.textContent = tag.name;
+        tagButton.onclick = () => toggleTagSelection(tagButton, tag.name);
+        tagsContainer.appendChild(tagButton);
+      }
+    });
+    
+    tagsSection.appendChild(tagsContainer);
+    readwiseContainer.appendChild(tagsSection);
+  }
+  
+  // Action buttons
+  const actionButtons = document.createElement('div');
+  actionButtons.style.display = 'flex';
+  actionButtons.style.gap = '8px';
+  actionButtons.style.marginTop = '10px';
+  
+  const saveButton = document.createElement('button');
+  saveButton.textContent = 'Save to Readwise';
+  saveButton.style.padding = '6px 12px';
+  saveButton.style.backgroundColor = '#2563eb';
+  saveButton.style.color = 'white';
+  saveButton.style.border = 'none';
+  saveButton.style.borderRadius = '4px';
+  saveButton.style.cursor = 'pointer';
+  saveButton.style.fontSize = '12px';
+  saveButton.onclick = saveToReadwise;
+  
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = 'Cancel';
+  cancelButton.style.padding = '6px 12px';
+  cancelButton.style.backgroundColor = '#6c757d';
+  cancelButton.style.color = 'white';
+  cancelButton.style.border = 'none';
+  cancelButton.style.borderRadius = '4px';
+  cancelButton.style.cursor = 'pointer';
+  cancelButton.style.fontSize = '12px';
+  cancelButton.onclick = () => {
+    readwiseContainer.remove();
+  };
+  
+  actionButtons.appendChild(saveButton);
+  actionButtons.appendChild(cancelButton);
+  
+  readwiseContainer.appendChild(title);
+  readwiseContainer.appendChild(actionButtons);
+  
+  currentContentDiv.appendChild(readwiseContainer);
+}
+
+// Toggle tag selection
+function toggleTagSelection(button, tagName) {
+  if (button.classList.contains('selected')) {
+    button.classList.remove('selected');
+    button.style.backgroundColor = '';
+    button.style.color = '';
+  } else {
+    button.classList.add('selected');
+    button.style.backgroundColor = '#2563eb';
+    button.style.color = 'white';
+  }
+}
+
+// Save to Readwise with selected tags
+function saveToReadwise() {
+  const selectedTags = Array.from(document.querySelectorAll('.claude-tag-button.selected'))
+    .map(button => button.textContent);
+  
+  const url = window.location.href;
+  const title = document.title;
+  
+  // Show saving state in inline UI
+  showReadwiseSavingState();
+  
+  chrome.runtime.sendMessage({
+    action: 'saveToReadwise',
+    url: url,
+    title: title,
+    summary: currentSummaryForSave.replace(/\*\*(.*?)\*\*/g, '$1'), // Remove markdown formatting
+    tags: selectedTags
+  });
+}
+
+// Show saving state for Readwise
+function showReadwiseSavingState() {
+  if (!currentContentDiv) return;
+  
+  const existingReadwiseUI = currentContentDiv.querySelector('.claude-readwise-inline');
+  if (existingReadwiseUI) {
+    existingReadwiseUI.innerHTML = `
+      <div style="padding: 15px; text-align: center;">
+        <div style="font-size: 14px; color: #666; margin-bottom: 5px;">Saving to Readwise...</div>
+        <div style="width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+      </div>
+    `;
+  }
+}
+
+// Show Readwise success message
+function showReadwiseSuccess(result) {
+  if (!currentContentDiv) return;
+  
+  const existingReadwiseUI = currentContentDiv.querySelector('.claude-readwise-inline');
+  if (existingReadwiseUI) {
+    existingReadwiseUI.innerHTML = `
+      <div style="padding: 15px; text-align: center;">
+        <div style="font-size: 14px; color: #22c55e; margin-bottom: 10px;">✓ Saved to Readwise!</div>
+        <div style="display: flex; gap: 8px; justify-content: center;">
+          <button onclick="window.open('https://read.readwise.io/new')" style="padding: 6px 12px; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">View in Readwise</button>
+          <button onclick="this.closest('.claude-readwise-inline').remove()" style="padding: 6px 12px; background-color: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Close</button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+// Show Readwise error message
+function showReadwiseError(error) {
+  if (!currentContentDiv) return;
+  
+  const existingReadwiseUI = currentContentDiv.querySelector('.claude-readwise-inline');
+  if (existingReadwiseUI) {
+    existingReadwiseUI.innerHTML = `
+      <div style="padding: 15px;">
+        <div style="font-size: 14px; color: #dc2626; margin-bottom: 10px;">✗ Error: ${error}</div>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="chrome.runtime.openOptionsPage()" style="padding: 6px 12px; background-color: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Open Settings</button>
+          <button onclick="saveToReadwise()" style="padding: 6px 12px; background-color: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Retry</button>
+          <button onclick="this.closest('.claude-readwise-inline').remove()" style="padding: 6px 12px; background-color: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Cancel</button>
+        </div>
+      </div>
+    `;
+  }
 }

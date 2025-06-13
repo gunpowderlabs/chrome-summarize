@@ -456,3 +456,145 @@
     color: #f5c6cb !important;
   }
 }
+
+/* Readwise button styles */
+#claude-summary-readwise {
+  all: initial !important;
+  display: inline-block !important;
+  margin-top: 15px !important;
+  padding: 8px 16px !important;
+  background-color: #2563eb !important;
+  color: white !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+  font-size: 14px !important;
+  font-weight: normal !important;
+  border: none !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  text-align: center !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  transition: background-color 0.2s !important;
+}
+
+#claude-summary-readwise:hover {
+  background-color: #1d4ed8 !important;
+}
+
+#claude-summary-readwise:active {
+  background-color: #1e40af !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Tag container styles */
+.claude-tags-container {
+  all: initial !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin: 10px 0 !important;
+}
+
+.claude-tag-button {
+  all: initial !important;
+  display: inline-block !important;
+  padding: 4px 12px !important;
+  background-color: #f3f4f6 !important;
+  color: #374151 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 16px !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+  transition: background-color 0.2s, color 0.2s !important;
+  text-decoration: none !important;
+  font-weight: normal !important;
+}
+
+.claude-tag-button:hover {
+  background-color: #e5e7eb !important;
+}
+
+.claude-tag-button.suggested {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border-color: #93c5fd !important;
+}
+
+.claude-tag-button.suggested:hover {
+  background-color: #bfdbfe !important;
+}
+
+.claude-tag-button.selected {
+  background-color: #2563eb !important;
+  color: white !important;
+  border-color: #2563eb !important;
+}
+
+/* Readwise modal styles */
+.claude-readwise-modal {
+  all: initial !important;
+  display: block !important;
+  padding: 20px !important;
+  color: #000 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+}
+
+.claude-suggested-tags {
+  all: initial !important;
+  display: block !important;
+  margin-top: 10px !important;
+  padding: 8px !important;
+  background-color: #f9fafb !important;
+  border-radius: 4px !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+/* Readwise inline UI styles */
+.claude-readwise-inline {
+  all: initial !important;
+  display: block !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+  color: #000 !important;
+}
+
+/* Spinner animation for inline loading */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Dark mode for Readwise styles */
+@media (prefers-color-scheme: dark) {
+  .claude-tag-button {
+    background-color: #374151 !important;
+    color: #f9fafb !important;
+    border-color: #4b5563 !important;
+  }
+  
+  .claude-tag-button:hover {
+    background-color: #4b5563 !important;
+  }
+  
+  .claude-tag-button.suggested {
+    background-color: #1e3a8a !important;
+    color: #bfdbfe !important;
+    border-color: #3b82f6 !important;
+  }
+  
+  .claude-tag-button.suggested:hover {
+    background-color: #1e40af !important;
+  }
+  
+  .claude-readwise-modal {
+    color: #fff !important;
+  }
+  
+  .claude-suggested-tags {
+    background-color: #1f2937 !important;
+    border-color: #374151 !important;
+  }
+  
+  .claude-readwise-inline {
+    color: #fff !important;
+  }
+}
