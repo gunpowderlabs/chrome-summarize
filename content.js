@@ -1,6 +1,77 @@
+// Add a ready flag to ensure the script is fully loaded
+let contentScriptReady = true;
+console.log('Content script loaded and ready at:', window.location.href);
+
+// Check if the page is fully loaded
+if (document.readyState === 'loading') {
+  console.log('Page still loading, waiting for DOMContentLoaded...');
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded fired, content script ready');
+    testConnection();
+  });
+} else {
+  console.log('Page already loaded, content script ready immediately');
+  testConnection();
+}
+
+// Test connection to background script
+function testConnection() {
+  chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Connection test failed:', chrome.runtime.lastError);
+    } else {
+      console.log('Connection test successful:', response);
+    }
+  });
+}
+
+// Helper function to check if current page is a YouTube video
+function isYouTubeVideo() {
+  return window.location.hostname.includes('youtube.com') && 
+         window.location.pathname === '/watch';
+}
+
+// Helper function to get YouTube video ID from URL
+function getYouTubeVideoId() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get('v');
+}
+
 // Create sidebar when extension is clicked
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Content script received message:', message.action);
+  
   if (message.action === 'extractContent') {
+    console.log('Starting content extraction...');
+    // Check if this is a YouTube video
+    if (isYouTubeVideo()) {
+      const videoId = getYouTubeVideoId();
+      if (!videoId) {
+        showError('Invalid YouTube URL', 'Could not extract video ID from the current URL.', [
+          { text: 'Retry', action: () => location.reload() }
+        ]);
+        return;
+      }
+      
+      showProgressState('extracting', 'Preparing YouTube video for summarization...');
+      
+      setTimeout(() => {
+        showProgressState('processing', 'Sending video to YTS tool for transcription...');
+        
+        // Send YouTube-specific request to background script
+        chrome.runtime.sendMessage({
+          action: 'summarizeYouTubeVideo',
+          videoUrl: window.location.href,
+          videoId: videoId,
+          title: document.title
+        });
+      }, 300);
+      
+      sendResponse({ status: 'youtube video detected' });
+      return true;
+    }
+    
+    // Original content extraction for non-YouTube pages
     showProgressState('extracting', 'Extracting page content...');
     
     setTimeout(() => {
@@ -28,12 +99,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }, 300);
     
     // Acknowledge receipt
+    console.log('Sending response back to background script');
     sendResponse({ status: 'content extracted' });
     return true; // Keep the message channel open for the async response
   } else if (message.action === 'displaySummary') {
     retryCount = 0; // Reset retry count on successful summary
     displaySummary(message.summary);
     sendResponse({ status: 'summary displayed' });
+  } else if (message.action === 'displayYouTubeSummary') {
+    retryCount = 0; // Reset retry count on successful summary
+    displayYouTubeSummary(message.summary, message.metadata);
+    sendResponse({ status: 'youtube summary displayed' });
   } else if (message.action === 'displayError') {
     const errorMessage = message.error || 'An unknown error occurred.';
     if (errorMessage.includes('API key')) {
@@ -419,6 +495,31 @@ function showError(title, message, actions = []) {
 // Display the summary in the sidebar
 function displaySummary(summary) {
   createOrUpdateSidebar(summary);
+}
+
+// Display YouTube-specific summary with metadata
+function displayYouTubeSummary(summary, metadata) {
+  // Format the summary with additional YouTube metadata
+  let enhancedSummary = summary;
+  
+  if (metadata) {
+    const metadataSection = [];
+    if (metadata.duration) {
+      metadataSection.push(`**Duration:** ${metadata.duration}`);
+    }
+    if (metadata.channel) {
+      metadataSection.push(`**Channel:** ${metadata.channel}`);
+    }
+    if (metadata.hasTranscript) {
+      metadataSection.push(`**Source:** Video transcript`);
+    }
+    
+    if (metadataSection.length > 0) {
+      enhancedSummary = summary + '\n\n' + metadataSection.join('\n');
+    }
+  }
+  
+  createOrUpdateSidebar(enhancedSummary);
 }
 
 // Retry functionality with exponential backoff
