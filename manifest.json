@@ -3,7 +3,7 @@
   "name": "Page Summarizer",
   "version": "1.4",
   "description": "Summarizes web pages using Claude AI",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "nativeMessaging"],
   "host_permissions": ["https://api.anthropic.com/*", "https://readwise.io/*"],
   "action": {
     "default_title": "Summarize Page",

@@ -4,11 +4,6 @@ chrome.action.onClicked.addListener((tab) => {
     if (!result.apiKey) {
       // No API key, open options page
       chrome.runtime.openOptionsPage();
-      // Notify the user that they need to set up the API key
-      chrome.tabs.sendMessage(tab.id, { 
-        action: 'displayError', 
-        error: 'Please set your Anthropic API key in the extension options.'
-      });
     } else {
       // API key exists, proceed with content extraction
       chrome.tabs.sendMessage(tab.id, { action: 'extractContent' });
@@ -52,6 +47,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     
     // Return true to indicate we'll send a response asynchronously
+    return true;
+  } else if (message.action === 'summarizeYouTubeVideo') {
+    // Handle YouTube video summarization using YTS tool
+    summarizeYouTubeWithYTS(message.videoUrl, message.videoId, message.title, sender.tab.id)
+      .then(result => {
+        // Send the summary back to the content script with metadata
+        chrome.tabs.sendMessage(sender.tab.id, {
+          action: 'displayYouTubeSummary',
+          summary: result.summary,
+          metadata: result.metadata
+        });
+      })
+      .catch(error => {
+        console.error('YouTube summarization error:', error);
+        chrome.tabs.sendMessage(sender.tab.id, {
+          action: 'displayError',
+          error: `YouTube summarization failed: ${error.message}`
+        });
+      });
+    
     return true;
   } else if (message.action === 'saveToReadwise') {
     saveToReadwise(message.url, message.title, message.summary, message.tags, sender.tab.id)
@@ -224,4 +239,74 @@ async function saveToReadwise(url, title, summary, tags, tabId) {
   
   const data = await response.json();
   return data;
+}
+
+// Function to summarize YouTube videos using YTS tool via Native Messaging
+async function summarizeYouTubeWithYTS(videoUrl, videoId, title, tabId) {
+  return new Promise((resolve, reject) => {
+    // Connect to native messaging host
+    const port = chrome.runtime.connectNative('com.chrome_summarize.yts');
+    
+    let responseReceived = false;
+    
+    port.onMessage.addListener((response) => {
+      responseReceived = true;
+      
+      if (response.success) {
+        try {
+          const summaryData = response.summary;
+          const metadata = response.metadata;
+          
+          // Format the summary
+          let summary = summaryData.tldr || 'No summary available';
+          
+          // Add suggested tags if available
+          if (summaryData.tags && summaryData.tags.length > 0) {
+            summary += '\nTAGS: ' + summaryData.tags.join(', ');
+          }
+          
+          resolve({
+            summary: summary,
+            metadata: {
+              duration: metadata.duration || 'Unknown',
+              channel: metadata.uploader || 'Unknown',
+              hasTranscript: true,
+              fullSummary: summaryData.full_summary
+            }
+          });
+        } catch (error) {
+          reject(new Error('Failed to parse YTS response: ' + error.message));
+        }
+      } else {
+        reject(new Error(response.error || 'YTS processing failed'));
+      }
+      
+      port.disconnect();
+    });
+    
+    port.onDisconnect.addListener(() => {
+      if (!responseReceived) {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error('Native messaging failed: ' + error.message));
+        } else {
+          reject(new Error('Native messaging host disconnected unexpectedly'));
+        }
+      }
+    });
+    
+    // Send the summarize request
+    port.postMessage({
+      action: 'summarize',
+      url: videoUrl
+    });
+    
+    // Timeout after 5 minutes (YTS can take a while for long videos)
+    setTimeout(() => {
+      if (!responseReceived) {
+        port.disconnect();
+        reject(new Error('YTS processing timed out after 5 minutes'));
+      }
+    }, 300000);
+  });
 }
