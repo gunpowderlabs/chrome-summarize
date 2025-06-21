@@ -1,0 +1,9 @@
+{
+  "name": "com.chrome_summarize.yts",
+  "description": "YTS YouTube Summarizer Native Host",
+  "path": "/Users/azolotov/dev/chrome-summarize/native-host/yts-native-host.js",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://YOUR_EXTENSION_ID_HERE/"
+  ]
+}
