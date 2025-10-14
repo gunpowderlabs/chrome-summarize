@@ -148,17 +148,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Extract main content from the page
 function extractMainContent() {
   // More comprehensive content extraction logic
-  
+
+  // LinkedIn-specific extraction (must come before generic article selector)
+  if (window.location.hostname.includes('linkedin.com')) {
+    // Use role="article" to find the post container (more stable than class selectors)
+    const linkedInArticle = document.querySelector('[role="article"]');
+
+    if (linkedInArticle) {
+      // Look for the post description within the article
+      const postDescription = linkedInArticle.querySelector('[class*="feed-shared-update-v2__description"]') ||
+                             linkedInArticle.querySelector('[class*="feed-shared-inline-show-more-text"]');
+
+      if (postDescription && postDescription.innerText.trim().length > 50) {
+        console.log('LinkedIn post content extracted:', postDescription.innerText.length, 'characters');
+        return postDescription.innerText;
+      }
+    }
+  }
+
   // Try common content container elements first
-  const article = document.querySelector('article') || 
-                 document.querySelector('main') || 
-                 document.querySelector('.content') || 
+  const article = document.querySelector('article') ||
+                 document.querySelector('main') ||
+                 document.querySelector('.content') ||
                  document.querySelector('#content') ||
                  document.querySelector('.article') ||
                  document.querySelector('.post') ||
                  document.querySelector('.entry') ||
                  document.querySelector('[role="main"]');
-  
+
   if (article && article.innerText.trim().length > 50) {
     return article.innerText;
   }
