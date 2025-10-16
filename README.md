@@ -4,14 +4,40 @@ A Chrome extension that summarizes web pages using Claude AI and displays the su
 
 ## Setup
 
-1. Clone this repository
-2. Load the extension in Chrome:
-   - Go to `chrome://extensions/`
-   - Enable Developer mode (toggle in the top right)
+### Basic Installation
+
+1. **Open Chrome Extensions Page**
+   - Go to `chrome://extensions/` in your Chrome browser
+   - Or use Menu → More tools → Extensions
+
+2. **Enable Developer Mode**
+   - Toggle the "Developer mode" switch in the top-right corner
+
+3. **Load the Extension**
    - Click "Load unpacked"
-   - Select this project's directory
-3. Click the extension icon in your toolbar
-4. Enter your Anthropic API key in the options page that appears
+   - Navigate to this project's directory
+   - Select the folder and click "Open"
+
+4. **Configure API Key**
+   - Click the extension icon in your toolbar
+   - Click the menu (three dots) and select "Options"
+   - Enter your Anthropic API key
+   - (Optional) Add Readwise token if you want article saving
+
+5. **Verify Installation**
+   - The "Page Summarizer" should appear in your extensions list
+   - You can now use the extension on any webpage
+
+### Optional: YouTube Support
+
+To enable YouTube video summarization via native messaging:
+
+```bash
+cd native-host
+./install.sh
+```
+
+This requires the YTS tool at `~/dev/yts/bin/yts.js`.
 
 ## Usage
 
