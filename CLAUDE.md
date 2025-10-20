@@ -41,7 +41,7 @@ cd native-host && ./install.sh
 
 ### API Integration
 - Uses Anthropic API directly from browser with `anthropic-dangerous-direct-browser-access` header
-- Model: `claude-sonnet-4-20250514`
+- Model: `claude-haiku-4-5`
 - Readwise API for article saving and tag management
 
 ### Native Messaging
