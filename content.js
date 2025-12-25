@@ -388,13 +388,12 @@ function createOrUpdateSidebar(content, model) {
   
   contentDiv.appendChild(buttonContainer);
 
-  // Add model info at the bottom if available
-  if (model) {
-    const modelDiv = document.createElement('div');
-    modelDiv.className = 'claude-model-info';
-    modelDiv.textContent = `Model: ${model}`;
-    contentDiv.appendChild(modelDiv);
-  }
+  // Add model info and word count at the bottom
+  const wordCount = summaryText.trim().split(/\s+/).filter(w => w.length > 0).length;
+  const infoDiv = document.createElement('div');
+  infoDiv.className = 'claude-model-info';
+  infoDiv.textContent = model ? `${wordCount} words · ${model}` : `${wordCount} words`;
+  contentDiv.appendChild(infoDiv);
 
   // Clear previous content (except close button)
   while (sidebar.childNodes.length > 1) {
