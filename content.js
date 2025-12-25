@@ -285,9 +285,17 @@ function createOrUpdateSidebar(content, model) {
     suggestedTags = parts[1].split(',').map(tag => tag.trim()).filter(tag => tag);
   }
   
-  // Process markdown-style bold formatting
-  const processedContent = summaryText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  
+  // Process markdown-style bold formatting and convert paragraphs
+  let processedContent = summaryText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+  // Convert double newlines to paragraph breaks
+  processedContent = processedContent
+    .split(/\n\n+/)
+    .map(p => p.trim())
+    .filter(p => p.length > 0)
+    .map(p => `<p>${p}</p>`)
+    .join('');
+
   // Update content
   const contentDiv = document.createElement('div');
   contentDiv.innerHTML = `<h2>Page Summary</h2><div>${processedContent}</div>`;
