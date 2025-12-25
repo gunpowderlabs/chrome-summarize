@@ -2,6 +2,49 @@
 let contentScriptReady = true;
 console.log('Content script loaded and ready at:', window.location.href);
 
+// Shadow DOM host and root references
+let shadowHost = null;
+let shadowRoot = null;
+
+// Get or create the shadow DOM container for the sidebar
+function getOrCreateShadowRoot() {
+  if (shadowRoot) return shadowRoot;
+
+  // Create host element
+  shadowHost = document.createElement('div');
+  shadowHost.id = 'claude-summary-host';
+
+  // Attach shadow root (closed mode for full isolation)
+  shadowRoot = shadowHost.attachShadow({ mode: 'closed' });
+
+  // Fetch and inject styles
+  fetch(chrome.runtime.getURL('sidebar.css'))
+    .then(response => response.text())
+    .then(css => {
+      const style = document.createElement('style');
+      style.textContent = css;
+      shadowRoot.insertBefore(style, shadowRoot.firstChild);
+    });
+
+  document.body.appendChild(shadowHost);
+  return shadowRoot;
+}
+
+// Remove the sidebar and shadow host
+function removeSidebar() {
+  if (shadowHost && shadowHost.parentNode) {
+    shadowHost.parentNode.removeChild(shadowHost);
+  }
+  shadowHost = null;
+  shadowRoot = null;
+}
+
+// Get the sidebar element from shadow root
+function getSidebar() {
+  if (!shadowRoot) return null;
+  return shadowRoot.getElementById('claude-summary-sidebar');
+}
+
 // Check if the page is fully loaded
 if (document.readyState === 'loading') {
   console.log('Page still loading, waiting for DOMContentLoaded...');
@@ -213,32 +256,24 @@ function extractMainContent() {
 
 // Create or update the sidebar
 function createOrUpdateSidebar(content, model) {
-  let sidebar = document.getElementById('claude-summary-sidebar');
-  
+  const root = getOrCreateShadowRoot();
+  let sidebar = root.getElementById('claude-summary-sidebar');
+
   if (!sidebar) {
     // Create sidebar if it doesn't exist
     sidebar = document.createElement('div');
     sidebar.id = 'claude-summary-sidebar';
-    
+
     // Add close button
     const closeButton = document.createElement('button');
     closeButton.id = 'claude-summary-close';
     closeButton.innerText = '×';
     closeButton.onclick = () => {
-      document.body.removeChild(sidebar);
+      removeSidebar();
     };
-    
-    // Inject CSS if not already present
-    if (!document.getElementById('claude-summary-styles')) {
-      const styleSheet = document.createElement('link');
-      styleSheet.id = 'claude-summary-styles';
-      styleSheet.rel = 'stylesheet';
-      styleSheet.href = chrome.runtime.getURL('sidebar.css');
-      document.head.appendChild(styleSheet);
-    }
-    
+
     sidebar.appendChild(closeButton);
-    document.body.appendChild(sidebar);
+    root.appendChild(sidebar);
   }
   
   // Parse summary and tags
@@ -349,11 +384,6 @@ function createOrUpdateSidebar(content, model) {
   if (model) {
     const modelDiv = document.createElement('div');
     modelDiv.className = 'claude-model-info';
-    modelDiv.style.marginTop = '15px';
-    modelDiv.style.paddingTop = '10px';
-    modelDiv.style.borderTop = '1px solid #e5e7eb';
-    modelDiv.style.fontSize = '11px';
-    modelDiv.style.color = '#9ca3af';
     modelDiv.textContent = `Model: ${model}`;
     contentDiv.appendChild(modelDiv);
   }
@@ -368,32 +398,24 @@ function createOrUpdateSidebar(content, model) {
 
 // Show progress state with spinner and progress bar
 function showProgressState(stage, message) {
-  let sidebar = document.getElementById('claude-summary-sidebar');
-  
+  const root = getOrCreateShadowRoot();
+  let sidebar = root.getElementById('claude-summary-sidebar');
+
   if (!sidebar) {
     // Create sidebar if it doesn't exist
     sidebar = document.createElement('div');
     sidebar.id = 'claude-summary-sidebar';
-    
+
     // Add close button
     const closeButton = document.createElement('button');
     closeButton.id = 'claude-summary-close';
     closeButton.innerText = '×';
     closeButton.onclick = () => {
-      document.body.removeChild(sidebar);
+      removeSidebar();
     };
-    
-    // Inject CSS if not already present
-    if (!document.getElementById('claude-summary-styles')) {
-      const styleSheet = document.createElement('link');
-      styleSheet.id = 'claude-summary-styles';
-      styleSheet.rel = 'stylesheet';
-      styleSheet.href = chrome.runtime.getURL('sidebar.css');
-      document.head.appendChild(styleSheet);
-    }
-    
+
     sidebar.appendChild(closeButton);
-    document.body.appendChild(sidebar);
+    root.appendChild(sidebar);
   }
   
   // Create loading content
@@ -456,32 +478,24 @@ function showProgressState(stage, message) {
 
 // Show error with enhanced UI and action buttons
 function showError(title, message, actions = []) {
-  let sidebar = document.getElementById('claude-summary-sidebar');
-  
+  const root = getOrCreateShadowRoot();
+  let sidebar = root.getElementById('claude-summary-sidebar');
+
   if (!sidebar) {
     // Create sidebar if it doesn't exist
     sidebar = document.createElement('div');
     sidebar.id = 'claude-summary-sidebar';
-    
+
     // Add close button
     const closeButton = document.createElement('button');
     closeButton.id = 'claude-summary-close';
     closeButton.innerText = '×';
     closeButton.onclick = () => {
-      document.body.removeChild(sidebar);
+      removeSidebar();
     };
-    
-    // Inject CSS if not already present
-    if (!document.getElementById('claude-summary-styles')) {
-      const styleSheet = document.createElement('link');
-      styleSheet.id = 'claude-summary-styles';
-      styleSheet.rel = 'stylesheet';
-      styleSheet.href = chrome.runtime.getURL('sidebar.css');
-      document.head.appendChild(styleSheet);
-    }
-    
+
     sidebar.appendChild(closeButton);
-    document.body.appendChild(sidebar);
+    root.appendChild(sidebar);
   }
   
   // Create error content
@@ -748,7 +762,8 @@ function toggleTagSelection(button, tagName) {
 
 // Save to Readwise with selected tags
 function saveToReadwise() {
-  const selectedTags = Array.from(document.querySelectorAll('.claude-tag-button.selected'))
+  const root = getOrCreateShadowRoot();
+  const selectedTags = Array.from(root.querySelectorAll('.claude-tag-button.selected'))
     .map(button => button.textContent);
   
   const url = window.location.href;
