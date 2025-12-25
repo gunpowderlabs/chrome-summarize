@@ -18,14 +18,20 @@ Chrome extension that summarizes web pages using Claude AI. Features include:
 - **sidebar.css**: Sidebar styling
 - **prompt.txt**: Claude AI summarization prompt template
 - **options.html/js**: Extension settings page for API keys
-- **native-host/**: YTS integration for YouTube video summarization
+- **native-host/**: YTS integration for YouTube video summarization (uses Bun runtime)
   - Requires manual installation via `install.sh`
   - Expects YTS at `~/dev/yts/bin/yts.js`
+
+## Prerequisites
+
+- [Bun](https://bun.sh/) runtime for native messaging host
 
 ## Development Commands
 
 ```bash
 # Install native messaging host (for YouTube support)
+bun run install-native-host
+# Or directly:
 cd native-host && ./install.sh
 
 # Load extension in Chrome
@@ -46,6 +52,7 @@ cd native-host && ./install.sh
 
 ### Native Messaging
 - YouTube videos handled via YTS tool through native messaging
+- Uses Bun runtime for the native host script
 - Host manifest at `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`
 - Requires extension ID configuration after installation
 

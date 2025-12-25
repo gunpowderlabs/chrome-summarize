@@ -4,11 +4,21 @@
 
 echo "Installing YTS Native Messaging Host..."
 
+# Check for bun installation
+if ! command -v bun &> /dev/null; then
+    echo "Error: bun is not installed. Please install it first:"
+    echo "  curl -fsSL https://bun.sh/install | bash"
+    exit 1
+fi
+
+echo "Found bun: $(which bun) ($(bun --version))"
+
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Make the host script executable
 chmod +x "$SCRIPT_DIR/yts-native-host.js"
+chmod +x "$SCRIPT_DIR/yts-native-host.sh"
 
 # Chrome native messaging hosts directory on macOS
 CHROME_NMH_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"

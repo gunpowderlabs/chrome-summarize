@@ -1,20 +1,22 @@
-#!/opt/homebrew/bin/node
+#!/usr/bin/env bun
 
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+import { spawn } from 'child_process';
+import { join } from 'path';
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'fs';
+
+const HOME = process.env.HOME;
 
 // Log errors to file for debugging (native messaging can't use console.log)
-const logFile = path.join(process.env.HOME, 'yts-native-host.log');
+const logFile = join(HOME, 'yts-native-host.log');
 function logError(message) {
   const timestamp = new Date().toISOString();
-  fs.appendFileSync(logFile, `${timestamp}: ${message}\n`);
+  appendFileSync(logFile, `${timestamp}: ${message}\n`);
 }
 
 // Log startup
 logError('Native host started');
-logError('Node version: ' + process.version);
-logError('Script path: ' + __filename);
+logError('Bun version: ' + Bun.version);
+logError('Script path: ' + import.meta.path);
 logError('Working directory: ' + process.cwd());
 logError('PATH: ' + process.env.PATH);
 
@@ -67,10 +69,10 @@ readMessage((message) => {
   
   if (message.action === 'summarize' && message.url) {
     // Path to yts command - adjust this based on where yts is installed
-    const ytsPath = path.join(process.env.HOME, 'dev', 'yts', 'bin', 'yts.js');
-    
+    const ytsPath = join(HOME, 'dev', 'yts', 'bin', 'yts.js');
+
     // Check if yts exists
-    if (!fs.existsSync(ytsPath)) {
+    if (!existsSync(ytsPath)) {
       sendMessage({ 
         error: 'YTS tool not found at expected location',
         path: ytsPath 
@@ -79,7 +81,7 @@ readMessage((message) => {
     }
     
     // Execute yts command with --quiet flag
-    const yts = spawn('node', [ytsPath, message.url, '--quiet'], {
+    const yts = spawn('bun', [ytsPath, message.url, '--quiet'], {
       env: { ...process.env }
     });
     
@@ -102,41 +104,41 @@ readMessage((message) => {
         try {
           // Try to find the JSON summary file
           // YTS saves summaries in ~/Library/Application Support/yts/{title}/summary.json
-          const appSupportPath = path.join(
-            process.env.HOME, 
-            'Library', 
-            'Application Support', 
+          const appSupportPath = join(
+            HOME,
+            'Library',
+            'Application Support',
             'yts'
           );
-          
+
           // Find the most recently created directory
-          const dirs = fs.readdirSync(appSupportPath)
+          const dirs = readdirSync(appSupportPath)
             .map(name => ({
               name,
-              path: path.join(appSupportPath, name),
-              stat: fs.statSync(path.join(appSupportPath, name))
+              path: join(appSupportPath, name),
+              stat: statSync(join(appSupportPath, name))
             }))
             .filter(item => item.stat.isDirectory())
             .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
-          
+
           if (dirs.length > 0) {
             const latestDir = dirs[0];
             logError('Found latest directory: ' + latestDir.name);
-            
+
             // Find the summary file with the full name pattern
-            const files = fs.readdirSync(latestDir.path);
+            const files = readdirSync(latestDir.path);
             const summaryFile = files.find(f => f.endsWith('_summary.json'));
             const metadataFile = files.find(f => f.endsWith('_metadata.json'));
-            
+
             if (summaryFile) {
-              const summaryPath = path.join(latestDir.path, summaryFile);
-              const summaryData = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+              const summaryPath = join(latestDir.path, summaryFile);
+              const summaryData = JSON.parse(readFileSync(summaryPath, 'utf8'));
               
               // Also try to get metadata
               let metadata = {};
               if (metadataFile) {
-                const metadataPath = path.join(latestDir.path, metadataFile);
-                metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                const metadataPath = join(latestDir.path, metadataFile);
+                metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
               }
               
               sendMessage({

@@ -1,0 +1,15 @@
+{
+  "name": "chrome-summarize",
+  "version": "1.0.0",
+  "description": "Chrome extension that summarizes web pages using Claude AI",
+  "type": "module",
+  "scripts": {
+    "install-native-host": "cd native-host && ./install.sh"
+  },
+  "keywords": [
+    "chrome-extension",
+    "summarizer",
+    "claude-ai"
+  ],
+  "license": "MIT"
+}
