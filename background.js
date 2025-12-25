@@ -18,11 +18,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const startTime = Date.now();
     
     summarizeWithAnthropic(message.content, sender.tab.id)
-      .then(summary => {
+      .then(result => {
         // Send the summary back to the content script
         chrome.tabs.sendMessage(sender.tab.id, {
           action: 'displaySummary',
-          summary: summary
+          summary: result.summary,
+          model: result.model
         });
       })
       .catch(error => {
@@ -103,6 +104,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// Model used for summarization
+const CLAUDE_MODEL = 'claude-haiku-4-5';
+
 // Function to call Anthropic API
 async function summarizeWithAnthropic(content, tabId) {
   // Get the API key from storage
@@ -149,7 +153,7 @@ async function summarizeWithAnthropic(content, tabId) {
       'anthropic-dangerous-direct-browser-access': 'true'
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
+      model: CLAUDE_MODEL,
       max_tokens: 1000,
       temperature: 0.7,
       system: promptTemplate,
@@ -165,7 +169,10 @@ async function summarizeWithAnthropic(content, tabId) {
   }
   
   const data = await response.json();
-  return data.content[0].text;
+  return {
+    summary: data.content[0].text,
+    model: CLAUDE_MODEL
+  };
 }
 
 // Function to get Readwise tags

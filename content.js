@@ -104,7 +104,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for the async response
   } else if (message.action === 'displaySummary') {
     retryCount = 0; // Reset retry count on successful summary
-    displaySummary(message.summary);
+    displaySummary(message.summary, message.model);
     sendResponse({ status: 'summary displayed' });
   } else if (message.action === 'displayYouTubeSummary') {
     retryCount = 0; // Reset retry count on successful summary
@@ -212,7 +212,7 @@ function extractMainContent() {
 }
 
 // Create or update the sidebar
-function createOrUpdateSidebar(content) {
+function createOrUpdateSidebar(content, model) {
   let sidebar = document.getElementById('claude-summary-sidebar');
   
   if (!sidebar) {
@@ -344,12 +344,25 @@ function createOrUpdateSidebar(content) {
   }
   
   contentDiv.appendChild(buttonContainer);
-  
+
+  // Add model info at the bottom if available
+  if (model) {
+    const modelDiv = document.createElement('div');
+    modelDiv.className = 'claude-model-info';
+    modelDiv.style.marginTop = '15px';
+    modelDiv.style.paddingTop = '10px';
+    modelDiv.style.borderTop = '1px solid #e5e7eb';
+    modelDiv.style.fontSize = '11px';
+    modelDiv.style.color = '#9ca3af';
+    modelDiv.textContent = `Model: ${model}`;
+    contentDiv.appendChild(modelDiv);
+  }
+
   // Clear previous content (except close button)
   while (sidebar.childNodes.length > 1) {
     sidebar.removeChild(sidebar.lastChild);
   }
-  
+
   sidebar.appendChild(contentDiv);
 }
 
@@ -510,8 +523,8 @@ function showError(title, message, actions = []) {
 }
 
 // Display the summary in the sidebar
-function displaySummary(summary) {
-  createOrUpdateSidebar(summary);
+function displaySummary(summary, model) {
+  createOrUpdateSidebar(summary, model);
 }
 
 // Display YouTube-specific summary with metadata
