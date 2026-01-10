@@ -370,15 +370,13 @@ function createOrUpdateSidebar(content, model) {
   const readwiseButton = document.createElement('button');
   readwiseButton.id = 'claude-summary-readwise';
   readwiseButton.innerText = 'Save to Readwise';
-  readwiseButton.style.marginLeft = '10px';
-  readwiseButton.style.backgroundColor = '#2563eb';
   readwiseButton.onclick = () => {
     showReadwiseUI(summaryText, suggestedTags, contentDiv);
   };
   
   // Create button container
   const buttonContainer = document.createElement('div');
-  buttonContainer.style.marginTop = '10px';
+  buttonContainer.style.cssText = 'margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;';
   buttonContainer.appendChild(copyButton);
   
   // Only add Readwise button if it's not an error
