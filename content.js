@@ -45,28 +45,6 @@ function getSidebar() {
   return shadowRoot.getElementById('claude-summary-sidebar');
 }
 
-// Check if the page is fully loaded
-if (document.readyState === 'loading') {
-  console.log('Page still loading, waiting for DOMContentLoaded...');
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded fired, content script ready');
-    testConnection();
-  });
-} else {
-  console.log('Page already loaded, content script ready immediately');
-  testConnection();
-}
-
-// Test connection to background script
-function testConnection() {
-  chrome.runtime.sendMessage({ action: 'ping' }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('Connection test failed:', chrome.runtime.lastError);
-    } else {
-      console.log('Connection test successful:', response);
-    }
-  });
-}
 
 // Helper function to check if current page is a YouTube video
 function isYouTubeVideo() {
