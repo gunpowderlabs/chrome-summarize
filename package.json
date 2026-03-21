@@ -9,7 +9,7 @@
     "install-native-host": "cd native-host && ./install.sh"
   },
   "dependencies": {
-    "class-variance-authority": "^0.7",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2",
     "lucide-react": "^0.468",
     "radix-ui": "^1.4.3",

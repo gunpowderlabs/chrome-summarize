@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import type { ProgressStage } from "@/types/chrome-messages";
 
 interface LoadingStateProps {
@@ -25,7 +26,7 @@ export function LoadingState({ stage, message }: LoadingStateProps) {
 
   return (
     <div className="flex flex-col items-center justify-center p-10 text-center">
-      <div className="size-10 border-4 border-muted border-t-primary rounded-full animate-spin mb-4" />
+      <Spinner className="size-8 mb-4" />
       <p className="text-muted-foreground mb-2">{message}</p>
       <p className="text-xs text-muted-foreground/70">{detail}</p>
     </div>
