@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Page Summarizer",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Summarizes web pages using Claude AI",
-  "permissions": ["activeTab", "scripting", "storage", "nativeMessaging"],
+  "permissions": ["activeTab", "scripting", "storage", "nativeMessaging", "sidePanel"],
   "host_permissions": ["https://api.anthropic.com/*", "https://readwise.io/*"],
   "action": {
     "default_title": "Summarize Page",
@@ -12,6 +12,9 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "background": {
     "service_worker": "background.js"
@@ -23,12 +26,6 @@
     }
   ],
   "options_page": "options.html",
-  "web_accessible_resources": [
-    {
-      "resources": ["prompt.txt", "sidebar.css"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "commands": {
     "_execute_action": {
       "suggested_key": {

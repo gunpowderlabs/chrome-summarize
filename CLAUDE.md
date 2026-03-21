@@ -8,14 +8,14 @@ Chrome extension that summarizes web pages using Claude AI. Features include:
 - Web page content extraction and summarization
 - YouTube video summarization via YTS native messaging integration
 - Readwise integration for saving and tagging articles
-- Sidebar display for summaries
+- Chrome Side Panel for displaying summaries (per-tab state)
 
 ## Project Structure
 
-- **manifest.json**: Chrome extension manifest (v3)
-- **background.js**: Service worker handling API calls to Anthropic, Readwise, and YTS native messaging
-- **content.js**: Content script for page extraction and sidebar UI
-- **sidebar.css**: Sidebar styling
+- **manifest.json**: Chrome extension manifest (v3) with Side Panel API
+- **background.js**: Service worker — central state manager, API calls, tab state tracking
+- **content.js**: Content script — only extracts page content (no UI)
+- **sidepanel.html/js/css**: Chrome Side Panel UI for displaying summaries, progress, errors, Readwise integration
 - **prompt.txt**: Claude AI summarization prompt template
 - **options.html/js**: Extension settings page for API keys
 - **native-host/**: YTS integration for YouTube video summarization (uses Bun runtime)

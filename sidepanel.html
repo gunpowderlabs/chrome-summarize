@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div id="panel-root">
+    <div id="empty-state" class="panel-state active">
+      <h2>Page Summarizer</h2>
+      <p>Click the extension icon or press <kbd>Cmd+Shift+S</kbd> to summarize the current page.</p>
+    </div>
+
+    <div id="loading-state" class="panel-state">
+      <div class="claude-loading-container">
+        <div class="claude-spinner"></div>
+        <div id="progress-text" class="claude-progress-text"></div>
+        <div id="progress-detail" class="claude-progress-detail"></div>
+        <div class="claude-progress-bar-container">
+          <div id="progress-bar" class="claude-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="error-state" class="panel-state">
+      <div class="claude-error-container">
+        <div id="error-title" class="claude-error-title"></div>
+        <div id="error-message" class="claude-error-message"></div>
+        <div id="error-actions" class="claude-error-actions"></div>
+      </div>
+    </div>
+
+    <div id="summary-state" class="panel-state">
+      <h2>Page Summary</h2>
+      <div id="summary-content"></div>
+      <div id="suggested-tags-display"></div>
+      <div id="button-container" class="button-container">
+        <button id="copy-button" class="action-button copy-button">Copy Sharable Snippet</button>
+        <button id="readwise-button" class="action-button readwise-button">Save to Readwise</button>
+      </div>
+      <div id="readwise-inline-ui"></div>
+      <div id="model-info" class="claude-model-info"></div>
+    </div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
