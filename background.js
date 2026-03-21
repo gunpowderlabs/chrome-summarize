@@ -65,7 +65,8 @@ async function startSummarization(tabId) {
   updateTabState(tabId, {
     phase: 'progress',
     stage: 'extracting',
-    message: 'Extracting page content...'
+    message: 'Extracting page content...',
+    startTime: Date.now()
   });
 
   try {
@@ -147,11 +148,13 @@ function handleExtractedContent(tabId, response) {
 async function handleSummarization(tabId, content) {
   try {
     const result = await summarizeWithAnthropic(content, tabId);
+    const startTime = tabStates.get(tabId)?.startTime;
     updateTabState(tabId, {
       phase: 'summary',
       summary: result.summary,
       model: result.model,
-      metadata: null
+      metadata: null,
+      durationMs: startTime ? Date.now() - startTime : null
     });
   } catch (error) {
     console.error('Error:', error);
@@ -183,11 +186,13 @@ async function handleSummarization(tabId, content) {
 async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
   try {
     const result = await summarizeYouTubeWithYTS(videoUrl, videoId, title, tabId);
+    const startTime = tabStates.get(tabId)?.startTime;
     updateTabState(tabId, {
       phase: 'summary',
       summary: result.summary,
       model: null,
-      metadata: result.metadata
+      metadata: result.metadata,
+      durationMs: startTime ? Date.now() - startTime : null
     });
   } catch (error) {
     console.error('YouTube summarization error:', error);

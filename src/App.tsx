@@ -48,6 +48,7 @@ export function App() {
           summary={panelState.summary}
           model={panelState.model}
           metadata={panelState.metadata}
+          durationMs={panelState.durationMs}
           url={panelState.url}
           pageTitle={panelState.pageTitle}
           readwise={readwise}

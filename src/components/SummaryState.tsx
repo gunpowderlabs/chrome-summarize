@@ -10,6 +10,7 @@ interface SummaryStateProps {
   summary: string;
   model: string | null;
   metadata: YouTubeMetadata | null;
+  durationMs?: number | null;
   url?: string;
   pageTitle?: string;
   readwise: ReadwiseState;
@@ -43,6 +44,7 @@ export function SummaryState({
   summary,
   model,
   metadata,
+  durationMs,
   url,
   pageTitle,
   readwise,
@@ -154,7 +156,13 @@ export function SummaryState({
       )}
 
       <div className="mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
-        {model ? `${wordCount} words · ${model}` : `${wordCount} words`}
+        {[
+          `${wordCount} words`,
+          model,
+          durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </div>
     </div>
   );

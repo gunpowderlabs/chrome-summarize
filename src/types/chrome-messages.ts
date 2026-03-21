@@ -35,6 +35,7 @@ export interface SummaryState {
   summary: string;
   model: string | null;
   metadata: YouTubeMetadata | null;
+  durationMs?: number | null;
   url?: string;
   pageTitle?: string;
 }
