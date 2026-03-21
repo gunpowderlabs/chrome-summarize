@@ -129,7 +129,6 @@ export function SummaryState({
 
       {suggestedTags.length > 0 && !readwiseEnabled && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          <span className="text-xs text-muted-foreground mr-1">Tags:</span>
           {suggestedTags.map((tag) => (
             <Badge key={tag} variant="secondary">
               {tag}
