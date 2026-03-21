@@ -118,10 +118,6 @@ export function SummaryState({
 
   return (
     <div className="p-5">
-      <h2 className="text-xl font-bold mb-4 pb-2 border-b-2 border-foreground">
-        Page Summary
-      </h2>
-
       <div
         className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold"
         dangerouslySetInnerHTML={{ __html: processedHtml + metadataHtml }}
