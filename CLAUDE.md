@@ -15,7 +15,9 @@ Chrome extension that summarizes web pages using Claude AI. Features include:
 - **manifest.json**: Chrome extension manifest (v3) with Side Panel API
 - **background.js**: Service worker — central state manager, API calls, tab state tracking
 - **content.js**: Content script — only extracts page content (no UI)
-- **sidepanel.html/js/css**: Chrome Side Panel UI for displaying summaries, progress, errors, Readwise integration
+- **sidepanel.html**: Vite entry point for the side panel (React)
+- **src/**: React + TypeScript source for the side panel (Tailwind CSS v4, shadcn/ui)
+- **dist/**: Built extension output (load this in Chrome)
 - **prompt.txt**: Claude AI summarization prompt template
 - **options.html/js**: Extension settings page for API keys
 - **native-host/**: YTS integration for YouTube video summarization (uses Bun runtime)
@@ -24,20 +26,29 @@ Chrome extension that summarizes web pages using Claude AI. Features include:
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) runtime for native messaging host
+- [Bun](https://bun.sh/) runtime for build tooling and native messaging host
 
 ## Development Commands
 
 ```bash
+# Install dependencies
+bun install
+
+# Build the extension (outputs to dist/)
+bun run build
+
+# Watch mode (rebuilds on source changes)
+bun run dev
+
 # Install native messaging host (for YouTube support)
 bun run install-native-host
-# Or directly:
-cd native-host && ./install.sh
 
 # Load extension in Chrome
 # 1. Go to chrome://extensions/
 # 2. Enable Developer mode
-# 3. Click "Load unpacked" and select this directory
+# 3. Click "Load unpacked" and select the dist/ directory
+#
+# After code changes: run `bun run build`, then reload the extension
 
 # Test extension
 # Use Ctrl+Shift+S (Windows/Linux) or Cmd+Shift+S (Mac)
