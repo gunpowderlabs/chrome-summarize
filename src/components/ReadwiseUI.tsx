@@ -3,7 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { ReadwiseState } from "@/hooks/use-chrome-messages";
-import { Check, X, Loader2, ExternalLink, Settings } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Check, X, ExternalLink, Settings } from "lucide-react";
 
 interface ReadwiseUIProps {
   readwise: ReadwiseState;
@@ -44,7 +46,7 @@ export function ReadwiseUI({ readwise, suggestedTags, onSave, onDismiss }: Readw
     return (
       <Card className="mt-4">
         <CardContent className="flex items-center justify-center gap-2 py-6">
-          <Loader2 className="size-4 animate-spin" />
+          <Spinner />
           <span className="text-sm text-muted-foreground">Loading tags...</span>
         </CardContent>
       </Card>
@@ -55,7 +57,7 @@ export function ReadwiseUI({ readwise, suggestedTags, onSave, onDismiss }: Readw
     return (
       <Card className="mt-4">
         <CardContent className="flex items-center justify-center gap-2 py-6">
-          <Loader2 className="size-4 animate-spin" />
+          <Spinner />
           <span className="text-sm text-muted-foreground">Saving to Readwise...</span>
         </CardContent>
       </Card>
@@ -124,7 +126,8 @@ export function ReadwiseUI({ readwise, suggestedTags, onSave, onDismiss }: Readw
         {readwise.tags.length > 0 && (
           <div className="mb-3">
             <p className="text-xs text-muted-foreground mb-2">Select tags:</p>
-            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+            <ScrollArea className="max-h-28">
+            <div className="flex flex-wrap gap-1.5">
               {/* Suggested tags first */}
               {suggestedTags.map((name) => {
                 const exists = readwise.tags.some((t) => t.name === name);
@@ -154,6 +157,7 @@ export function ReadwiseUI({ readwise, suggestedTags, onSave, onDismiss }: Readw
                   </Badge>
                 ))}
             </div>
+            </ScrollArea>
           </div>
         )}
         <div className="flex gap-2">

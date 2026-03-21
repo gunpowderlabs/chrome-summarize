@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { ReadwiseUI } from "./ReadwiseUI";
 import type { YouTubeMetadata } from "@/types/chrome-messages";
 import type { ReadwiseState } from "@/hooks/use-chrome-messages";
+import { Separator } from "@/components/ui/separator";
 import { Copy, BookOpen } from "lucide-react";
 
 interface SummaryStateProps {
@@ -155,7 +156,8 @@ export function SummaryState({
         />
       )}
 
-      <div className="mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
+      <Separator className="mt-4" />
+      <div className="pt-3 text-xs text-muted-foreground">
         {[
           `${wordCount} words`,
           model,
