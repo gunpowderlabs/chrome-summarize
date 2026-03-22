@@ -339,7 +339,7 @@ async function summarizeWithAnthropic(content, tabId) {
 
       if (availableTags.length > 0) {
         promptTemplate = promptTemplate.replace(
-          'Choose 3-5 relevant tags that would help organize this content. Use general categories like: technology, business, science, health, productivity, news, finance, education, entertainment, etc. Keep tags concise (1-2 words each).',
+          'Choose 3-5 relevant tags that would help organize this content. Include a mix of general categories (technology, business, science, health, etc.) and specific topics mentioned (product names, companies, technologies, people). Keep tags concise (1-2 words each).',
           `Choose 3-5 relevant tags that would help organize this content. You MUST select ONLY from these existing tags that the user already uses in Readwise: ${availableTags.join(', ')}. Do not create new tags - only suggest from this list.`
         );
       }

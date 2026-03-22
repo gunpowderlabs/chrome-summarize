@@ -13,6 +13,6 @@ Target length: minimum 100 words, maximum 20% of the original content's word cou
 After the summary, on a new line, provide suggested tags for categorizing this content. Format them as:
 TAGS: tag1, tag2, tag3
 
-Choose 3-5 relevant tags that would help organize this content. Use general categories like: technology, business, science, health, productivity, news, finance, education, entertainment, etc. Keep tags concise (1-2 words each).
+Choose 3-5 relevant tags that would help organize this content. Include a mix of general categories (technology, business, science, health, etc.) and specific topics mentioned (product names, companies, technologies, people). Keep tags concise (1-2 words each).
 
 Your goal is to help the reader understand not just what the page says, but why the author believes it - capturing the thesis and the reasoning that supports it.
