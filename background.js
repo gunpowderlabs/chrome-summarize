@@ -1,9 +1,6 @@
 // Per-tab state store
 const tabStates = new Map();
 
-// Tabs pending summarization (set when icon clicked, consumed when panel sends panelReady)
-const pendingSummarization = new Set();
-
 // Model used for summarization
 const CLAUDE_MODEL = 'claude-haiku-4-5';
 
@@ -49,14 +46,9 @@ chrome.action.onClicked.addListener(async (tab) => {
     return;
   }
 
-  // Mark tab as pending summarization — panelReady will trigger it
-  pendingSummarization.add(tab.id);
-
-  // If panel was already open (panelReady already fired), start now
-  if (pendingSummarization.has(tab.id)) {
-    pendingSummarization.delete(tab.id);
-    startSummarization(tab.id);
-  }
+  // Start summarization immediately — if panel is already open it will receive
+  // state updates; if it's still loading, panelReady will pick up the state
+  startSummarization(tab.id);
 });
 
 // --- Summarization Flow ---
@@ -218,10 +210,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         state.pageTitle = state.pageTitle || tabs[0].title;
         sendResponse({ tabId: tabId, state: state });
 
-        // If summarization was requested before panel was ready, start it now
-        if (pendingSummarization.has(tabId)) {
-          pendingSummarization.delete(tabId);
-          startSummarization(tabId);
+        // Auto-start summarization when panel opens with no existing state
+        if (state.phase === 'empty') {
+          chrome.storage.sync.get(['apiKey'], ({ apiKey }) => {
+            if (!apiKey) {
+              updateTabState(tabId, {
+                phase: 'error',
+                title: 'API Key Required',
+                message: 'Please set your Anthropic API key in the extension settings.',
+                errorType: 'apiKey',
+                url: state.url,
+                pageTitle: state.pageTitle
+              });
+            } else {
+              startSummarization(tabId);
+            }
+          });
         }
       } else {
         sendResponse({ tabId: null, state: { phase: 'empty' } });
