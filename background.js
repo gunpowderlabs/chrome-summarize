@@ -1,5 +1,22 @@
-// Per-tab state store
+// Per-tab state store (in-memory cache, backed by session storage)
 const tabStates = new Map();
+
+// Restore tab states from session storage (survives service worker restarts)
+const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates: stored }) => {
+  if (stored) {
+    for (const [key, value] of Object.entries(stored)) {
+      // Reset in-progress states — the summarization isn't running after a restart
+      if (value.phase === 'progress') {
+        value.phase = 'empty';
+      }
+      tabStates.set(Number(key), value);
+    }
+  }
+});
+
+function persistTabStates() {
+  chrome.storage.session.set({ tabStates: Object.fromEntries(tabStates) });
+}
 
 // Model used for summarization
 const CLAUDE_MODEL = 'claude-haiku-4-5';
@@ -10,6 +27,7 @@ function updateTabState(tabId, partialState) {
   const current = tabStates.get(tabId) || { phase: 'empty' };
   const newState = { ...current, ...partialState };
   tabStates.set(tabId, newState);
+  persistTabStates();
 
   // Broadcast to side panel
   chrome.runtime.sendMessage({
@@ -202,7 +220,8 @@ async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'panelReady') {
     // Side panel just loaded — send it the current tab's state
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+      await stateRestored;
       if (tabs[0]) {
         const tabId = tabs[0].id;
         const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
@@ -284,6 +303,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // --- Tab Event Listeners ---
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  await stateRestored;
   const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
 
   // Get URL/title for the newly active tab
@@ -304,12 +324,14 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabStates.delete(tabId);
+  persistTabStates();
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'loading') {
     // Page is navigating — clear the summary for this tab
     tabStates.delete(tabId);
+    persistTabStates();
     chrome.runtime.sendMessage({
       action: 'stateUpdate',
       tabId: tabId,
