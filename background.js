@@ -382,7 +382,7 @@ async function summarizeWithAnthropic(content, tabId) {
     },
     body: JSON.stringify({
       model: CLAUDE_MODEL,
-      max_tokens: 1000,
+      max_tokens: 1300,
       temperature: 0.7,
       system: promptTemplate,
       messages: [

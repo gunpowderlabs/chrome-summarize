@@ -57,17 +57,22 @@ export function SummaryState({
   const [showReadwise, setShowReadwise] = useState(false);
   const [readwiseEnabled, setReadwiseEnabled] = useState(false);
 
-  // Parse summary and tags
-  const parts = summary.split("\nTAGS:");
-  const summaryText = parts[0]!;
+  // Parse response: TLDR, comprehensive summary, and tags
+  const tagsParts = summary.split("\nTAGS:");
+  const body = tagsParts[0]!;
   const suggestedTags =
-    parts.length > 1
-      ? parts[1]!
+    tagsParts.length > 1
+      ? tagsParts[1]!
           .split(",")
           .map((t) => t.trim())
           .filter(Boolean)
       : [];
 
+  const summaryDelimiterIndex = body.indexOf("\nSUMMARY:\n");
+  const tldrText = summaryDelimiterIndex !== -1 ? body.slice(0, summaryDelimiterIndex).trim() : null;
+  const summaryText = summaryDelimiterIndex !== -1 ? body.slice(summaryDelimiterIndex + "\nSUMMARY:\n".length).trim() : body;
+
+  const tldrHtml = tldrText ? processMarkdown(tldrText) : null;
   const processedHtml = processMarkdown(summaryText);
 
   // YouTube metadata HTML
@@ -80,7 +85,8 @@ export function SummaryState({
     if (items.length) metadataHtml = `<p>${items.join("<br>")}</p>`;
   }
 
-  const wordCount = summaryText.trim().split(/\s+/).filter((w) => w.length > 0).length;
+  const fullText = tldrText ? `${tldrText} ${summaryText}` : summaryText;
+  const wordCount = fullText.trim().split(/\s+/).filter((w) => w.length > 0).length;
 
   // Check if Readwise is enabled
   useEffect(() => {
@@ -90,7 +96,8 @@ export function SummaryState({
   }, []);
 
   const handleCopy = useCallback(() => {
-    const cleanSummary = summaryText.replace(/\*\*(.*?)\*\*/g, "$1");
+    const copySource = tldrText ?? summaryText;
+    const cleanSummary = copySource.replace(/\*\*(.*?)\*\*/g, "$1");
     const snippet = `${url}\n\nTL;DR: ${cleanSummary}`;
     navigator.clipboard
       .writeText(snippet)
@@ -102,7 +109,7 @@ export function SummaryState({
         setCopyLabel("Copy failed");
         setTimeout(() => setCopyLabel("Copy Sharable Snippet"), 2000);
       });
-  }, [url, summaryText]);
+  }, [url, tldrText, summaryText]);
 
   const handleReadwiseClick = () => {
     setShowReadwise(true);
@@ -121,6 +128,15 @@ export function SummaryState({
 
   return (
     <div className="p-5">
+      {tldrHtml && (
+        <>
+          <div
+            className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold"
+            dangerouslySetInnerHTML={{ __html: tldrHtml }}
+          />
+          <Separator className="my-4" />
+        </>
+      )}
       <div
         className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold"
         dangerouslySetInnerHTML={{ __html: processedHtml + metadataHtml }}
