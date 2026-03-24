@@ -304,16 +304,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   await stateRestored;
-  const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
 
   // Get URL/title for the newly active tab
+  let url, title;
   try {
     const tab = await chrome.tabs.get(tabId);
-    state.url = state.url || tab.url;
-    state.pageTitle = state.pageTitle || tab.title;
+    url = tab.url;
+    title = tab.title;
   } catch (e) {
     // Tab might be a special page
   }
+
+  // Read state AFTER async work so concurrent startSummarization() calls
+  // are reflected (fixes empty-state flash when rapidly switching tabs)
+  const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
+  state.url = state.url || url;
+  state.pageTitle = state.pageTitle || title;
 
   chrome.runtime.sendMessage({
     action: 'activeTabChanged',
