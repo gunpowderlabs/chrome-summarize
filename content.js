@@ -32,6 +32,26 @@ function getYouTubeVideoId() {
   return urlParams.get('v');
 }
 
+function isBoilerplate(el) {
+  const id = (el.id || '').toLowerCase();
+  const cls = (el.className || '').toString().toLowerCase();
+  const role = (el.getAttribute('role') || '').toLowerCase();
+  const boilerplate = [
+    'cookie', 'consent', 'gdpr', 'privacy-banner', 'onetrust',
+    'cybotcookiebot', 'cc-banner', 'cc-window',
+  ];
+  return boilerplate.some(p => id.includes(p) || cls.includes(p)) || role === 'dialog';
+}
+
+function hasBoilerplateAncestor(el) {
+  let parent = el.parentElement;
+  while (parent && parent !== document.body) {
+    if (isBoilerplate(parent)) return true;
+    parent = parent.parentElement;
+  }
+  return false;
+}
+
 function extractMainContent() {
   // LinkedIn-specific extraction
   if (window.location.hostname.includes('linkedin.com')) {
@@ -45,25 +65,26 @@ function extractMainContent() {
     }
   }
 
-  // Common content container elements
-  const article = document.querySelector('article') ||
-                 document.querySelector('main') ||
-                 document.querySelector('.content') ||
-                 document.querySelector('#content') ||
-                 document.querySelector('.article') ||
-                 document.querySelector('.post') ||
-                 document.querySelector('.entry') ||
-                 document.querySelector('[role="main"]');
-
-  if (article && article.innerText.trim().length > 50) {
-    return article.innerText;
+  // Common content container elements (skip if inside a cookie/consent dialog)
+  const candidates = [
+    'article', 'main', '.content', '#content',
+    '.article', '.post', '.entry', '[role="main"]'
+  ];
+  for (const selector of candidates) {
+    const el = document.querySelector(selector);
+    if (el && el.innerText.trim().length > 50 && !isBoilerplate(el) && !hasBoilerplateAncestor(el)) {
+      return el.innerText;
+    }
   }
 
-  // Text-richest div
+  // Text-richest div (skip cookie consent, GDPR banners, etc.)
   const contentDivs = Array.from(document.querySelectorAll('div'))
     .filter(div => {
       const text = div.innerText || '';
-      return text.length > 200 && div.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 0;
+      return text.length > 200 &&
+             div.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 0 &&
+             !isBoilerplate(div) &&
+             !hasBoilerplateAncestor(div);
     })
     .sort((a, b) => (b.innerText || '').length - (a.innerText || '').length);
 
