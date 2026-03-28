@@ -48,6 +48,19 @@ chrome.action.onClicked.addListener(async (tab) => {
   // Enable side panel for this specific tab and open it
   // setOptions must not be awaited — any await before open() breaks the user gesture chain
   chrome.sidePanel.setOptions({ tabId: tab.id, path: 'sidepanel.html', enabled: true });
+
+  // Pre-set tab state before opening the panel so panelReady picks up 'progress'
+  // instead of 'empty' (avoids a flash of the empty state)
+  tabStates.set(tab.id, {
+    phase: 'progress',
+    stage: 'extracting',
+    message: 'Extracting page content...',
+    startTime: Date.now(),
+    url: tab.url,
+    pageTitle: tab.title
+  });
+  persistTabStates();
+
   await chrome.sidePanel.open({ windowId: tab.windowId, tabId: tab.id });
 
   const { apiKey } = await chrome.storage.sync.get(['apiKey']);
@@ -64,8 +77,6 @@ chrome.action.onClicked.addListener(async (tab) => {
     return;
   }
 
-  // Start summarization immediately — if panel is already open it will receive
-  // state updates; if it's still loading, panelReady will pick up the state
   startSummarization(tab.id);
 });
 

@@ -29,6 +29,9 @@ export function useChromeMessages() {
       (response?: PanelReadyResponse) => {
         if (chrome.runtime.lastError) return;
         if (response) {
+          // Update ref immediately so stateUpdate messages aren't dropped
+          // before React re-renders (setTabId is async/batched)
+          tabIdRef.current = response.tabId;
           setTabId(response.tabId);
           setPanelState(response.state ?? { phase: "empty" });
         }
