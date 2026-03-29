@@ -67,8 +67,8 @@ function extractMainContent() {
 
   // Common content container elements (skip if inside a cookie/consent dialog)
   const candidates = [
-    'article', 'main', '.content', '#content',
-    '.article', '.post', '.entry', '[role="main"]'
+    'article', 'main', '#content', '[role="main"]',
+    '.post', '.article', '.entry', '.content'
   ];
   for (const selector of candidates) {
     const el = document.querySelector(selector);
