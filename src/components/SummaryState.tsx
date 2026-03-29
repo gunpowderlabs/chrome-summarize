@@ -31,6 +31,7 @@ function escapeHtml(str: string) {
 function processMarkdown(text: string): string {
   let html = escapeHtml(text);
   html = html.replace(/^#{1,6}\s+(.*)$/gm, "$1");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
   html = html
     .split(/\n\n+/)
@@ -131,14 +132,14 @@ export function SummaryState({
       {tldrHtml && (
         <>
           <div
-            className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold"
+            className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
             dangerouslySetInnerHTML={{ __html: tldrHtml }}
           />
           <Separator className="my-4" />
         </>
       )}
       <div
-        className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold"
+        className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
         dangerouslySetInnerHTML={{ __html: processedHtml + metadataHtml }}
       />
 
