@@ -18,28 +18,13 @@ export function useChromeMessages() {
 
   const tabIdRef = useRef(tabId);
   tabIdRef.current = tabId;
+  const receivedLiveUpdateRef = useRef(false);
 
   const retryCountRef = useRef(0);
   const maxRetries = 3;
 
-  // On mount: send panelReady to background
-  useEffect(() => {
-    chrome.runtime.sendMessage(
-      { action: "panelReady" },
-      (response?: PanelReadyResponse) => {
-        if (chrome.runtime.lastError) return;
-        if (response) {
-          // Update ref immediately so stateUpdate messages aren't dropped
-          // before React re-renders (setTabId is async/batched)
-          tabIdRef.current = response.tabId;
-          setTabId(response.tabId);
-          setPanelState(response.state ?? { phase: "empty" });
-        }
-      }
-    );
-  }, []);
-
-  // Listen for messages from background
+  // Listen for messages before requesting the initial snapshot so we don't
+  // miss progress updates triggered by the panelReady handshake itself.
   useEffect(() => {
     const listener = (
       message: { action: string; [key: string]: unknown },
@@ -49,6 +34,7 @@ export function useChromeMessages() {
       switch (message.action) {
         case "stateUpdate":
           if ((message.tabId as number) === tabIdRef.current) {
+            receivedLiveUpdateRef.current = true;
             setPanelState(message.state as PanelState);
             // Reset readwise state when switching to a new summary
             if ((message.state as PanelState).phase === "summary") {
@@ -57,6 +43,8 @@ export function useChromeMessages() {
           }
           break;
         case "activeTabChanged":
+          receivedLiveUpdateRef.current = true;
+          tabIdRef.current = message.tabId as number;
           setTabId(message.tabId as number);
           setPanelState(message.state as PanelState);
           setReadwise({ tags: [], saveStatus: "idle", error: null });
@@ -91,6 +79,25 @@ export function useChromeMessages() {
     };
 
     chrome.runtime.onMessage.addListener(listener);
+
+    chrome.runtime.sendMessage(
+      { action: "panelReady" },
+      (response?: PanelReadyResponse) => {
+        if (chrome.runtime.lastError) return;
+        if (response) {
+          // Update ref immediately so later stateUpdate messages target the
+          // correct tab even before React has re-rendered.
+          tabIdRef.current = response.tabId;
+          setTabId(response.tabId);
+
+          // Keep a newer live update from being replaced by an older snapshot.
+          if (!receivedLiveUpdateRef.current) {
+            setPanelState(response.state ?? { phase: "empty" });
+          }
+        }
+      }
+    );
+
     return () => chrome.runtime.onMessage.removeListener(listener);
   }, []);
 
