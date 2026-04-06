@@ -98,8 +98,8 @@ export function SummaryState({
 
   const handleCopy = useCallback(() => {
     const copySource = tldrText ?? summaryText;
-    const cleanSummary = copySource.replace(/\*\*(.*?)\*\*/g, "$1");
-    const snippet = `${url}\n\nTL;DR: ${cleanSummary}`;
+    const cleanSummary = copySource.replace(/\*\*(.*?)\*\*/g, "$1").trim();
+    const snippet = url ? `${url}\nTL;DR: ${cleanSummary}` : `TL;DR: ${cleanSummary}`;
     navigator.clipboard
       .writeText(snippet)
       .then(() => {
