@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,23 +15,12 @@ interface ReadwiseUIProps {
 }
 
 export function ReadwiseUI({ readwise, suggestedTags, onSave, onDismiss }: ReadwiseUIProps) {
-  // Initialize selected tags from suggested tags that exist in available tags
-  const initialSelected = useMemo(() => {
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
     const available = new Set(readwise.tags.map((t) => t.name));
-    return new Set(suggestedTags.filter((t) => available.has(t)));
+    setSelectedTags(new Set(suggestedTags.filter((t) => available.has(t))));
   }, [readwise.tags, suggestedTags]);
-
-  const [selectedTags, setSelectedTags] = useState<Set<string>>(initialSelected);
-
-  // Sync when tags arrive (from loading → ready)
-  const [lastTagCount, setLastTagCount] = useState(0);
-  if (readwise.tags.length !== lastTagCount) {
-    setLastTagCount(readwise.tags.length);
-    if (readwise.tags.length > 0) {
-      const available = new Set(readwise.tags.map((t) => t.name));
-      setSelectedTags(new Set(suggestedTags.filter((t) => available.has(t))));
-    }
-  }
 
   const toggleTag = (name: string) => {
     setSelectedTags((prev) => {

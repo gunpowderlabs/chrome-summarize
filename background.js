@@ -1,5 +1,6 @@
 // Per-tab state store (in-memory cache, backed by session storage)
 const tabStates = new Map();
+let nextRequestId = 0;
 
 // Restore tab states from session storage (survives service worker restarts)
 const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates: stored }) => {
@@ -8,6 +9,8 @@ const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates:
       // Reset in-progress states — the summarization isn't running after a restart
       if (value.phase === 'progress') {
         value.phase = 'empty';
+        delete value.requestId;
+        delete value.startTime;
       }
       tabStates.set(Number(key), value);
     }
@@ -16,6 +19,23 @@ const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates:
 
 function persistTabStates() {
   chrome.storage.session.set({ tabStates: Object.fromEntries(tabStates) });
+}
+
+function createRequestId() {
+  nextRequestId += 1;
+  return `request-${nextRequestId}`;
+}
+
+function isCurrentRequest(tabId, requestId) {
+  return tabStates.get(tabId)?.requestId === requestId;
+}
+
+function updateTabStateForRequest(tabId, requestId, partialState) {
+  if (!isCurrentRequest(tabId, requestId)) {
+    return false;
+  }
+  updateTabState(tabId, partialState);
+  return true;
 }
 
 // Model used for summarization
@@ -83,16 +103,18 @@ chrome.action.onClicked.addListener(async (tab) => {
 // --- Summarization Flow ---
 
 async function startSummarization(tabId) {
+  const requestId = createRequestId();
   updateTabState(tabId, {
     phase: 'progress',
     stage: 'extracting',
     message: 'Extracting page content...',
-    startTime: Date.now()
+    startTime: Date.now(),
+    requestId: requestId
   });
 
   try {
     const response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
-    handleExtractedContent(tabId, response);
+    handleExtractedContent(tabId, response, requestId);
   } catch (err) {
     // Content script not loaded — inject it and retry
     try {
@@ -101,9 +123,9 @@ async function startSummarization(tabId) {
         files: ['content.js']
       });
       const response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
-      handleExtractedContent(tabId, response);
+      handleExtractedContent(tabId, response, requestId);
     } catch (err2) {
-      updateTabState(tabId, {
+      updateTabStateForRequest(tabId, requestId, {
         phase: 'error',
         title: 'Cannot Access Page',
         message: 'Unable to extract content from this page. It may be a browser internal page.',
@@ -113,9 +135,13 @@ async function startSummarization(tabId) {
   }
 }
 
-function handleExtractedContent(tabId, response) {
+function handleExtractedContent(tabId, response, requestId) {
+  if (!isCurrentRequest(tabId, requestId)) {
+    return;
+  }
+
   if (!response) {
-    updateTabState(tabId, {
+    updateTabStateForRequest(tabId, requestId, {
       phase: 'error',
       title: 'Extraction Failed',
       message: 'No response from content script.',
@@ -125,11 +151,13 @@ function handleExtractedContent(tabId, response) {
   }
 
   // Store URL and title
-  updateTabState(tabId, { url: response.url, pageTitle: response.title });
+  if (!updateTabStateForRequest(tabId, requestId, { url: response.url, pageTitle: response.title })) {
+    return;
+  }
 
   if (response.isYouTube) {
     if (!response.videoId) {
-      updateTabState(tabId, {
+      updateTabStateForRequest(tabId, requestId, {
         phase: 'error',
         title: 'Invalid YouTube URL',
         message: 'Could not extract video ID from the current URL.',
@@ -138,16 +166,18 @@ function handleExtractedContent(tabId, response) {
       return;
     }
 
-    updateTabState(tabId, {
+    if (!updateTabStateForRequest(tabId, requestId, {
       phase: 'progress',
       stage: 'processing',
       message: 'Sending video to YTS tool for transcription...'
-    });
+    })) {
+      return;
+    }
 
     handleYouTubeSummarization(tabId, response.url, response.videoId, response.title);
   } else {
     if (!response.content || response.content.trim().length < 30) {
-      updateTabState(tabId, {
+      updateTabStateForRequest(tabId, requestId, {
         phase: 'error',
         title: 'Insufficient Content',
         message: 'Not enough content found on this page to summarize.',
@@ -156,28 +186,37 @@ function handleExtractedContent(tabId, response) {
       return;
     }
 
-    updateTabState(tabId, {
+    if (!updateTabStateForRequest(tabId, requestId, {
       phase: 'progress',
       stage: 'generating',
       message: 'Generating summary with Claude AI...'
-    });
+    })) {
+      return;
+    }
 
-    handleSummarization(tabId, response.content);
+    handleSummarization(tabId, response.content, requestId);
   }
 }
 
-async function handleSummarization(tabId, content) {
+async function handleSummarization(tabId, content, requestId) {
   try {
     const result = await summarizeWithAnthropic(content, tabId);
+    if (!isCurrentRequest(tabId, requestId)) {
+      return;
+    }
     const startTime = tabStates.get(tabId)?.startTime;
-    updateTabState(tabId, {
+    updateTabStateForRequest(tabId, requestId, {
       phase: 'summary',
       summary: result.summary,
       model: result.model,
       metadata: null,
-      durationMs: startTime ? Date.now() - startTime : null
+      durationMs: startTime ? Date.now() - startTime : null,
+      requestId: null
     });
   } catch (error) {
+    if (!isCurrentRequest(tabId, requestId)) {
+      return;
+    }
     console.error('Error:', error);
     let errorMessage = error.message || 'Error generating summary.';
     let errorType = 'generic';
@@ -194,12 +233,13 @@ async function handleSummarization(tabId, content) {
       errorMessage = 'Network error. Please check your internet connection and try again.';
     }
 
-    updateTabState(tabId, {
+    updateTabStateForRequest(tabId, requestId, {
       phase: 'error',
       title: errorType === 'apiKey' ? 'API Key Issue' :
              errorType === 'rateLimit' ? 'Rate Limit Exceeded' : 'Processing Error',
       message: errorMessage,
-      errorType: errorType
+      errorType: errorType,
+      requestId: null
     });
   }
 }

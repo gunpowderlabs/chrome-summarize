@@ -21,7 +21,22 @@ export function useChromeMessages() {
   const receivedLiveUpdateRef = useRef(false);
 
   const retryCountRef = useRef(0);
+  const retryTabIdRef = useRef<number | null>(null);
+  const retryTimeoutRef = useRef<number | null>(null);
   const maxRetries = 3;
+
+  const clearRetryTimeout = useCallback(() => {
+    if (retryTimeoutRef.current != null) {
+      window.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetRetryState = useCallback(() => {
+    retryCountRef.current = 0;
+    retryTabIdRef.current = null;
+    clearRetryTimeout();
+  }, [clearRetryTimeout]);
 
   // Listen for messages before requesting the initial snapshot so we don't
   // miss progress updates triggered by the panelReady handshake itself.
@@ -35,15 +50,20 @@ export function useChromeMessages() {
         case "stateUpdate":
           if ((message.tabId as number) === tabIdRef.current) {
             receivedLiveUpdateRef.current = true;
-            setPanelState(message.state as PanelState);
+            const nextState = message.state as PanelState;
+            setPanelState(nextState);
+            if (nextState.phase === "empty" || nextState.phase === "summary") {
+              resetRetryState();
+            }
             // Reset readwise state when switching to a new summary
-            if ((message.state as PanelState).phase === "summary") {
+            if (nextState.phase === "summary") {
               setReadwise({ tags: [], saveStatus: "idle", error: null });
             }
           }
           break;
         case "activeTabChanged":
           receivedLiveUpdateRef.current = true;
+          resetRetryState();
           tabIdRef.current = message.tabId as number;
           setTabId(message.tabId as number);
           setPanelState(message.state as PanelState);
@@ -98,11 +118,22 @@ export function useChromeMessages() {
       }
     );
 
-    return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+    return () => {
+      clearRetryTimeout();
+      chrome.runtime.onMessage.removeListener(listener);
+    };
+  }, [clearRetryTimeout, resetRetryState]);
 
   const retry = useCallback(() => {
-    if (!tabIdRef.current) return;
+    const currentTabId = tabIdRef.current;
+    if (!currentTabId) return;
+
+    if (retryTabIdRef.current !== currentTabId) {
+      retryCountRef.current = 0;
+      retryTabIdRef.current = currentTabId;
+    }
+
+    clearRetryTimeout();
     retryCountRef.current++;
     if (retryCountRef.current > maxRetries) {
       setPanelState({
@@ -111,38 +142,40 @@ export function useChromeMessages() {
         message: "Please check your connection and try again later.",
         errorType: "generic",
       });
-      retryCountRef.current = 0;
+      resetRetryState();
       return;
     }
+
     const delay = Math.pow(2, retryCountRef.current - 1) * 1000;
     setPanelState({
       phase: "progress",
       stage: "retrying",
       message: `Retrying in ${delay / 1000} seconds... (${retryCountRef.current}/${maxRetries})`,
     });
-    setTimeout(() => {
+
+    retryTimeoutRef.current = window.setTimeout(() => {
+      retryTimeoutRef.current = null;
       chrome.runtime.sendMessage({
         action: "retrySummarize",
-        tabId: tabIdRef.current,
+        tabId: currentTabId,
       });
     }, delay);
-  }, []);
+  }, [clearRetryTimeout, resetRetryState]);
 
   const requestReadwiseTags = useCallback(() => {
     chrome.storage.sync.get(
       ["enableReadwise", "readwiseToken"],
       (result: { [key: string]: unknown }) => {
         if (!result.enableReadwise || !result.readwiseToken) {
-          setPanelState({
-            phase: "error",
-            title: "Readwise Not Configured",
-            message:
-              "Please enable Readwise integration and set your API token in the extension settings.",
-            errorType: "apiKey",
+          setReadwise({
+            tags: [],
+            saveStatus: "error",
+            error:
+              "Readwise integration is not configured. Enable it and add your API token in Settings.",
           });
           return;
         }
-        setReadwise((prev) => ({ ...prev, saveStatus: "loading-tags" }));
+        setReadwise((prev) => ({ ...prev, saveStatus: "loading-tags", error: null }));
         chrome.runtime.sendMessage({ action: "getReadwiseTags" });
       }
     );
