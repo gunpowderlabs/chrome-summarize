@@ -58,7 +58,7 @@ bun run install-native-host
 
 ### API Integration
 - Uses Anthropic API directly from browser with `anthropic-dangerous-direct-browser-access` header
-- Model: `claude-haiku-4-5`
+- Model: `claude-sonnet-4-6`
 - Readwise API for article saving and tag management
 
 ### Native Messaging
