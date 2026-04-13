@@ -21,6 +21,57 @@ function persistTabStates() {
   chrome.storage.session.set({ tabStates: Object.fromEntries(tabStates) });
 }
 
+function broadcastTabState(tabId, state) {
+  chrome.runtime.sendMessage({
+    action: 'stateUpdate',
+    tabId: tabId,
+    state: state
+  }).catch(() => {
+    // Side panel might not be open — that's fine
+  });
+}
+
+function setTabState(tabId, state, { broadcast = true } = {}) {
+  tabStates.set(tabId, state);
+  persistTabStates();
+
+  if (broadcast) {
+    broadcastTabState(tabId, state);
+  }
+
+  return state;
+}
+
+function getTabStateSnapshot(tabId, fallbackTab = null) {
+  const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
+
+  if (fallbackTab) {
+    state.url = state.url || fallbackTab.url;
+    state.pageTitle = state.pageTitle || fallbackTab.title;
+  }
+
+  return state;
+}
+
+function createLoadingState(tab = null) {
+  const state = {
+    phase: 'progress',
+    stage: 'extracting',
+    message: 'Extracting page content...',
+    startTime: Date.now()
+  };
+
+  if (tab?.url) {
+    state.url = tab.url;
+  }
+
+  if (tab?.title) {
+    state.pageTitle = tab.title;
+  }
+
+  return state;
+}
+
 function createRequestId() {
   nextRequestId += 1;
   return `request-${nextRequestId}`;
@@ -46,17 +97,7 @@ const CLAUDE_MODEL = 'claude-sonnet-4-6';
 function updateTabState(tabId, partialState) {
   const current = tabStates.get(tabId) || { phase: 'empty' };
   const newState = { ...current, ...partialState };
-  tabStates.set(tabId, newState);
-  persistTabStates();
-
-  // Broadcast to side panel
-  chrome.runtime.sendMessage({
-    action: 'stateUpdate',
-    tabId: tabId,
-    state: newState
-  }).catch(() => {
-    // Side panel might not be open — that's fine
-  });
+  return setTabState(tabId, newState);
 }
 
 // Disable side panel globally by default — only show on tabs where user explicitly opens it
@@ -71,17 +112,14 @@ chrome.action.onClicked.addListener(async (tab) => {
 
   // Pre-set tab state before opening the panel so panelReady picks up 'progress'
   // instead of 'empty' (avoids a flash of the empty state)
-  tabStates.set(tab.id, {
-    phase: 'progress',
-    stage: 'extracting',
-    message: 'Extracting page content...',
-    startTime: Date.now(),
-    url: tab.url,
-    pageTitle: tab.title
-  });
-  persistTabStates();
+  const loadingState = createLoadingState(tab);
+  setTabState(tab.id, loadingState, { broadcast: false });
 
   await chrome.sidePanel.open({ windowId: tab.windowId, tabId: tab.id });
+
+  // If the panel was already open, it will not remount and won't see the
+  // preloaded state unless we actively broadcast it here.
+  updateTabState(tab.id, loadingState);
 
   const { apiKey } = await chrome.storage.sync.get(['apiKey']);
   if (!apiKey) {
@@ -274,29 +312,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       await stateRestored;
       if (tabs[0]) {
-        const tabId = tabs[0].id;
-        const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
-        state.url = state.url || tabs[0].url;
-        state.pageTitle = state.pageTitle || tabs[0].title;
-        sendResponse({ tabId: tabId, state: state });
+        const tab = tabs[0];
+        const tabId = tab.id;
+        let state = getTabStateSnapshot(tabId, tab);
 
-        // Auto-start summarization when panel opens with no existing state
+        // Auto-start summarization when panel opens with no existing state,
+        // but respond with the loading/error state immediately so the UI
+        // never has to sit in the placeholder while work is already happening.
         if (state.phase === 'empty') {
-          chrome.storage.sync.get(['apiKey'], ({ apiKey }) => {
-            if (!apiKey) {
-              updateTabState(tabId, {
-                phase: 'error',
-                title: 'API Key Required',
-                message: 'Please set your Anthropic API key in the extension settings.',
-                errorType: 'apiKey',
-                url: state.url,
-                pageTitle: state.pageTitle
-              });
-            } else {
-              startSummarization(tabId);
-            }
-          });
+          const { apiKey } = await chrome.storage.sync.get(['apiKey']);
+          if (!apiKey) {
+            state = updateTabState(tabId, {
+              phase: 'error',
+              title: 'API Key Required',
+              message: 'Please set your Anthropic API key in the extension settings.',
+              errorType: 'apiKey',
+              url: state.url,
+              pageTitle: state.pageTitle
+            });
+          } else {
+            state = updateTabState(tabId, createLoadingState(tab));
+            startSummarization(tabId);
+          }
         }
+
+        sendResponse({ tabId: tabId, state: state });
       } else {
         sendResponse({ tabId: null, state: { phase: 'empty' } });
       }
@@ -368,9 +408,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
   // Read state AFTER async work so concurrent startSummarization() calls
   // are reflected (fixes empty-state flash when rapidly switching tabs)
-  const state = { ...(tabStates.get(tabId) || { phase: 'empty' }) };
-  state.url = state.url || url;
-  state.pageTitle = state.pageTitle || title;
+  const state = getTabStateSnapshot(tabId, { url, title });
 
   chrome.runtime.sendMessage({
     action: 'activeTabChanged',
