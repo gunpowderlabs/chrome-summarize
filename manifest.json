@@ -27,12 +27,15 @@
   ],
   "options_page": "options.html",
   "commands": {
-    "_execute_action": {
+    "summarize-page": {
       "suggested_key": {
         "default": "Ctrl+Shift+S",
         "mac": "Command+Shift+S"
       },
       "description": "Summarize the current page"
+    },
+    "_execute_action": {
+      "description": "Open Page Summarizer"
     }
   }
 }

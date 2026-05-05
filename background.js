@@ -6,13 +6,19 @@ let nextRequestId = 0;
 const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates: stored }) => {
   if (stored) {
     for (const [key, value] of Object.entries(stored)) {
-      // Reset in-progress states — the summarization isn't running after a restart
-      if (value.phase === 'progress') {
-        value.phase = 'empty';
-        delete value.requestId;
-        delete value.startTime;
+      const tabId = Number(key);
+      if (tabStates.has(tabId)) {
+        continue;
       }
-      tabStates.set(Number(key), value);
+
+      const restoredState = { ...value };
+      // Reset in-progress states — the summarization isn't running after a restart
+      if (restoredState.phase === 'progress') {
+        restoredState.phase = 'empty';
+        delete restoredState.requestId;
+        delete restoredState.startTime;
+      }
+      tabStates.set(tabId, restoredState);
     }
   }
 });
@@ -100,12 +106,22 @@ function updateTabState(tabId, partialState) {
   return setTabState(tabId, newState);
 }
 
-// Disable side panel globally by default — only show on tabs where user explicitly opens it
-chrome.sidePanel.setOptions({ enabled: false });
+// Disable side panel globally by default — only show on tabs where user explicitly opens it.
+// Also force action clicks through our handler so opening the panel always starts summarization.
+chrome.sidePanel.setOptions({ enabled: false }).catch((error) => {
+  console.warn('Unable to disable global side panel:', error);
+});
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
+  console.warn('Unable to configure side panel action behavior:', error);
+});
 
 // --- Action Click / Keyboard Shortcut ---
 
-chrome.action.onClicked.addListener(async (tab) => {
+async function summarizeTabFromUserGesture(tab) {
+  if (!tab?.id) {
+    return;
+  }
+
   // Enable side panel for this specific tab and open it
   // setOptions must not be awaited — any await before open() breaks the user gesture chain
   chrome.sidePanel.setOptions({ tabId: tab.id, path: 'sidepanel.html', enabled: true });
@@ -115,7 +131,11 @@ chrome.action.onClicked.addListener(async (tab) => {
   const loadingState = createLoadingState(tab);
   setTabState(tab.id, loadingState, { broadcast: false });
 
-  await chrome.sidePanel.open({ windowId: tab.windowId, tabId: tab.id });
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (error) {
+    console.warn('Unable to open side panel:', error);
+  }
 
   // If the panel was already open, it will not remount and won't see the
   // preloaded state unless we actively broadcast it here.
@@ -136,6 +156,33 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 
   startSummarization(tab.id);
+}
+
+function runSummarizeTabFromUserGesture(tab) {
+  summarizeTabFromUserGesture(tab).catch((error) => {
+    console.error('Failed to start summarization:', error);
+  });
+}
+
+chrome.action.onClicked.addListener((tab) => {
+  runSummarizeTabFromUserGesture(tab);
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command !== 'summarize-page') {
+    return;
+  }
+
+  if (tab?.id) {
+    runSummarizeTabFromUserGesture(tab);
+    return;
+  }
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      runSummarizeTabFromUserGesture(tabs[0]);
+    }
+  });
 });
 
 // --- Summarization Flow ---
