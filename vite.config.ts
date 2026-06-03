@@ -11,8 +11,9 @@ export default defineConfig({
     {
       name: "copy-extension-files",
       closeBundle() {
+        // background.js is bundled separately (vite.config.background.ts) so the
+        // AI SDK gets inlined; everything else is copied verbatim.
         const files = [
-          "background.js",
           "content.js",
           "manifest.json",
           "options.html",

@@ -9,7 +9,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { Copy, BookOpen } from "lucide-react";
 
 interface SummaryStateProps {
+  tldr: string | null;
   summary: string;
+  tags: string[];
   model: string | null;
   metadata: YouTubeMetadata | null;
   durationMs?: number | null;
@@ -45,7 +47,9 @@ function processMarkdown(text: string): string {
 }
 
 export function SummaryState({
-  summary,
+  tldr,
+  summary = "",
+  tags = [],
   model,
   metadata,
   durationMs,
@@ -61,20 +65,10 @@ export function SummaryState({
   const [showReadwise, setShowReadwise] = useState(false);
   const [readwiseEnabled, setReadwiseEnabled] = useState(false);
 
-  // Parse response: TLDR, comprehensive summary, and tags
-  const tagsParts = summary.split("\nTAGS:");
-  const body = tagsParts[0]!;
-  const suggestedTags =
-    tagsParts.length > 1
-      ? tagsParts[1]!
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean)
-      : [];
-
-  const summaryDelimiterIndex = body.indexOf("\nSUMMARY:\n");
-  const tldrText = summaryDelimiterIndex !== -1 ? body.slice(0, summaryDelimiterIndex).trim() : null;
-  const summaryText = summaryDelimiterIndex !== -1 ? body.slice(summaryDelimiterIndex + "\nSUMMARY:\n".length).trim() : body;
+  // Structured fields arrive directly from the model — no parsing required.
+  const tldrText = tldr;
+  const summaryText = summary;
+  const suggestedTags = tags;
 
   const tldrHtml = tldrText ? processMarkdown(tldrText) : null;
   const processedHtml = processMarkdown(summaryText);

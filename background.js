@@ -1,3 +1,12 @@
+import { createAnthropic } from '@ai-sdk/anthropic';
+import {
+  CLAUDE_MODEL,
+  streamSummary,
+  buildSystemPrompt,
+  classifyError,
+  mapYouTubeSummary
+} from './lib/summarize';
+
 // Per-tab state store (in-memory cache, backed by session storage)
 const tabStates = new Map();
 let nextRequestId = 0;
@@ -97,9 +106,9 @@ function updateTabStateForRequest(tabId, requestId, partialState) {
   return true;
 }
 
-// Broadcast partial streamed text to the panel without persisting every delta
-// to session storage — the 'progress' snapshot remains the restart fallback.
-function streamSummaryUpdate(tabId, requestId, partialSummary) {
+// Broadcast a partial streamed summary to the panel without persisting every
+// delta to session storage — the 'progress' snapshot remains the restart fallback.
+function streamSummaryUpdate(tabId, requestId, partial) {
   if (!isCurrentRequest(tabId, requestId)) {
     return false;
   }
@@ -107,16 +116,15 @@ function streamSummaryUpdate(tabId, requestId, partialSummary) {
   setTabState(tabId, {
     ...current,
     phase: 'summary',
-    summary: partialSummary,
+    tldr: partial.tldr || null,
+    summary: partial.summary || '',
+    tags: partial.tags || [],
     model: CLAUDE_MODEL,
     metadata: null,
     streaming: true
   }, { persist: false });
   return true;
 }
-
-// Model used for summarization
-const CLAUDE_MODEL = 'claude-sonnet-4-6';
 
 // Min interval between streamed UI updates (ms) — keeps the panel smooth
 // without flooding it with a message per token.
@@ -293,13 +301,13 @@ function handleExtractedContent(tabId, response, requestId) {
 async function handleSummarization(tabId, content, requestId) {
   try {
     let lastFlush = 0;
-    const onPartial = (text) => {
+    const onPartial = (partial) => {
       const now = Date.now();
       if (now - lastFlush < STREAM_THROTTLE_MS) {
         return;
       }
       lastFlush = now;
-      streamSummaryUpdate(tabId, requestId, text);
+      streamSummaryUpdate(tabId, requestId, partial);
     };
 
     const result = await summarizeWithAnthropic(content, tabId, onPartial);
@@ -309,7 +317,9 @@ async function handleSummarization(tabId, content, requestId) {
     const startTime = tabStates.get(tabId)?.startTime;
     updateTabStateForRequest(tabId, requestId, {
       phase: 'summary',
-      summary: result.summary,
+      tldr: result.summary.tldr,
+      summary: result.summary.summary,
+      tags: result.summary.tags,
       model: result.model,
       metadata: null,
       streaming: false,
@@ -321,27 +331,12 @@ async function handleSummarization(tabId, content, requestId) {
       return;
     }
     console.error('Error:', error);
-    let errorMessage = error.message || 'Error generating summary.';
-    let errorType = 'generic';
-
-    if (error.message && error.message.includes('401')) {
-      errorMessage = 'Invalid API key. Please check your Anthropic API key in the extension settings.';
-      errorType = 'apiKey';
-    } else if (error.message && error.message.includes('429')) {
-      errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
-      errorType = 'rateLimit';
-    } else if (error.message && error.message.includes('500')) {
-      errorMessage = 'Anthropic API is experiencing issues. Please try again later.';
-    } else if (error.message && error.message.includes('network')) {
-      errorMessage = 'Network error. Please check your internet connection and try again.';
-    }
-
+    const { errorType, title, message } = classifyError(error);
     updateTabStateForRequest(tabId, requestId, {
       phase: 'error',
-      title: errorType === 'apiKey' ? 'API Key Issue' :
-             errorType === 'rateLimit' ? 'Rate Limit Exceeded' : 'Processing Error',
-      message: errorMessage,
-      errorType: errorType,
+      title,
+      message,
+      errorType,
       requestId: null
     });
   }
@@ -353,9 +348,12 @@ async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
     const startTime = tabStates.get(tabId)?.startTime;
     updateTabState(tabId, {
       phase: 'summary',
+      tldr: null,
       summary: result.summary,
+      tags: result.tags,
       model: null,
       metadata: result.metadata,
+      streaming: false,
       durationMs: startTime ? Date.now() - startTime : null
     });
   } catch (error) {
@@ -502,53 +500,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 
 // --- Anthropic API ---
 
-// Read an Anthropic SSE stream, appending text deltas and invoking onPartial
-// with the accumulated text. Returns the full text once the stream completes.
-async function readAnthropicStream(response, onPartial) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let text = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-
-    let newlineIndex;
-    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, newlineIndex).trim();
-      buffer = buffer.slice(newlineIndex + 1);
-
-      if (!line.startsWith('data:')) {
-        continue;
-      }
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') {
-        continue;
-      }
-
-      let event;
-      try {
-        event = JSON.parse(data);
-      } catch {
-        continue;
-      }
-
-      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-        text += event.delta.text;
-        onPartial(text);
-      } else if (event.type === 'error') {
-        throw new Error(event.error?.message || 'Streaming error from Anthropic API');
-      }
-    }
-  }
-
-  return text;
-}
-
+// Stream a structured summary via the AI SDK. onPartial receives progressively
+// more complete { tldr, summary, tags } objects; the resolved value is the
+// fully validated object.
 async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
   const result = await chrome.storage.sync.get(['apiKey', 'enableReadwise', 'readwiseToken']);
   if (!result.apiKey) {
@@ -556,65 +510,37 @@ async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
   }
 
   // Get the prompt template
-  let promptTemplate = await fetch(chrome.runtime.getURL('prompt.txt'))
+  const basePrompt = await fetch(chrome.runtime.getURL('prompt.txt'))
     .then(response => response.text())
     .catch(() => 'You are a helpful AI assistant that creates concise summaries of web page content.');
 
-  // If Readwise is enabled, get user's tags and modify the prompt
+  // If Readwise is enabled, constrain the tags to the user's existing set
+  let availableTags = [];
   if (result.enableReadwise && result.readwiseToken) {
     try {
       const tags = await getReadwiseTags();
-      const availableTags = tags.map(tag => tag.name);
-
-      if (availableTags.length > 0) {
-        promptTemplate = promptTemplate.replace(
-          'Choose 3-5 relevant tags that would help organize this content. Include a mix of general categories (technology, business, science, health, etc.) and specific topics mentioned (product names, companies, technologies, people). Keep tags concise (1-2 words each).',
-          `Choose 3-5 relevant tags that would help organize this content. You MUST select ONLY from these existing tags that the user already uses in Readwise: ${availableTags.join(', ')}. Do not create new tags - only suggest from this list.`
-        );
-      }
+      availableTags = tags.map(tag => tag.name);
     } catch (error) {
       console.log('Could not fetch Readwise tags, using generic tag suggestions:', error);
     }
   }
 
-  const truncatedContent = content.slice(0, 100000);
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': result.apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 1300,
-      temperature: 0.7,
-      stream: true,
-      system: promptTemplate,
-      messages: [
-        { role: 'user', content: truncatedContent }
-      ]
-    })
+  // Anthropic has no native JSON mode, so the SDK forces structure via a tool
+  // call. The dangerous-direct-browser-access header is required to call the
+  // API directly from the extension (no CORS proxy).
+  const anthropic = createAnthropic({
+    apiKey: result.apiKey,
+    headers: { 'anthropic-dangerous-direct-browser-access': 'true' }
   });
 
-  if (!response.ok) {
-    let message = `API error: ${response.status}`;
-    try {
-      const errorData = await response.json();
-      message = errorData.error?.message || message;
-    } catch {
-      // Non-JSON error body — fall back to the status-based message
-    }
-    throw new Error(message);
-  }
+  const summary = await streamSummary({
+    model: anthropic(CLAUDE_MODEL),
+    system: buildSystemPrompt(basePrompt, availableTags),
+    prompt: content.slice(0, 100000),
+    onPartial
+  });
 
-  const summary = await readAnthropicStream(response, onPartial);
-  return {
-    summary: summary,
-    model: CLAUDE_MODEL
-  };
+  return { summary, model: CLAUDE_MODEL };
 }
 
 // --- Readwise API ---
@@ -695,23 +621,7 @@ async function summarizeYouTubeWithYTS(videoUrl, videoId, title, tabId) {
 
       if (response.success) {
         try {
-          const summaryData = response.summary;
-          const metadata = response.metadata;
-
-          let summary = summaryData.tldr || 'No summary available';
-          if (summaryData.tags && summaryData.tags.length > 0) {
-            summary += '\nTAGS: ' + summaryData.tags.join(', ');
-          }
-
-          resolve({
-            summary: summary,
-            metadata: {
-              duration: metadata.duration || 'Unknown',
-              channel: metadata.uploader || 'Unknown',
-              hasTranscript: true,
-              fullSummary: summaryData.full_summary
-            }
-          });
+          resolve(mapYouTubeSummary(response.summary, response.metadata));
         } catch (error) {
           reject(new Error('Failed to parse YTS response: ' + error.message));
         }

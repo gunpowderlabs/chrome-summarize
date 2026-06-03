@@ -1,21 +1,28 @@
 {
   "name": "chrome-summarize",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Chrome extension that summarizes web pages using Claude AI",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build",
+    "dev:sw": "vite build --config vite.config.background.ts --watch",
+    "build": "vite build && vite build --config vite.config.background.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test": "bun test",
+    "ci": "bun run typecheck && bun run test && bun run build",
     "install-native-host": "cd native-host && ./install.sh"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.81",
+    "ai": "^6.0.195",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2",
     "lucide-react": "^0.468",
     "radix-ui": "^1.4.3",
     "react": "^19",
     "react-dom": "^19",
-    "tailwind-merge": "^3"
+    "tailwind-merge": "^3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.300",

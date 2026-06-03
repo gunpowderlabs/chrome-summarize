@@ -45,7 +45,9 @@ export function App() {
     case "summary":
       return (
         <SummaryState
+          tldr={panelState.tldr}
           summary={panelState.summary}
+          tags={panelState.tags}
           model={panelState.model}
           metadata={panelState.metadata}
           durationMs={panelState.durationMs}

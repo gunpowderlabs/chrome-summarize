@@ -32,7 +32,9 @@ export interface YouTubeMetadata {
 
 export interface SummaryState {
   phase: "summary";
+  tldr: string | null;
   summary: string;
+  tags: string[];
   model: string | null;
   metadata: YouTubeMetadata | null;
   durationMs?: number | null;
