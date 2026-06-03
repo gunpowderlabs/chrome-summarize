@@ -10,6 +10,15 @@ Chrome extension that summarizes web pages using Claude AI. Features include:
 - Readwise integration for saving and tagging articles
 - Chrome Side Panel for displaying summaries (per-tab state)
 
+## Versioning
+
+**Always bump the version number on every change.** Keep `manifest.json` and `package.json` in sync (they must hold the same value).
+
+Use semantic versioning:
+- **patch** (`x.x.+1`) for bug fixes
+- **minor** (`x.+1.0`) for new features
+- **major** (`+1.0.0`) for breaking changes
+
 ## Project Structure
 
 - **manifest.json**: Chrome extension manifest (v3) with Side Panel API
