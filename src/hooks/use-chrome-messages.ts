@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { PanelState, ReadwiseTag, PanelReadyResponse } from "@/types/chrome-messages";
+import type { PanelState, ReadwiseTag } from "@/types/chrome-messages";
 
 export interface ReadwiseState {
   tags: ReadwiseTag[];
@@ -7,33 +7,54 @@ export interface ReadwiseState {
   error: string | null;
 }
 
-const seqOf = (state: PanelState | undefined): number =>
-  typeof state?.seq === "number" ? state.seq : -1;
+interface PanelReadyResponse {
+  tabId: number | null;
+  windowId: number | null;
+  state: PanelState;
+}
 
+const EMPTY_STATE: PanelState = { phase: "empty" };
+const EMPTY_READWISE: ReadwiseState = { tags: [], saveStatus: "idle", error: null };
+
+// Read one tab's state out of the persisted tabStates map. Object keys are
+// strings (Object.fromEntries), so a numeric tabId indexes fine via coercion.
+function readTabState(
+  map: Record<string, PanelState> | undefined,
+  tabId: number | null
+): PanelState {
+  if (map == null || tabId == null) return EMPTY_STATE;
+  return map[tabId] ?? EMPTY_STATE;
+}
+
+/**
+ * State sync for the side panel.
+ *
+ * Two hard-won reliability rules drive this design:
+ *
+ *  1. The panel does NOT figure out its own tab via chrome.tabs.query — that
+ *     query is racy when issued from a just-opened side panel and often returns
+ *     the wrong tab (or none), which left the panel bound to a tab with no state
+ *     and stuck on the empty placeholder. Instead the service worker — which
+ *     knows exactly which tab the panel was opened for — hands the tab id back in
+ *     the panelReady reply.
+ *
+ *  2. The panel does NOT rely on the worker pushing state via runtime.sendMessage
+ *     (those broadcasts get dropped). chrome.storage.session is the single source
+ *     of truth; the panel reads it and subscribes to chrome.storage.onChanged.
+ *
+ * Tab switches come from the chrome.tabs.onActivated event's own tabId (reliable,
+ * unlike a re-query). Visibility regain re-reads storage. Every path converges to
+ * the latest stored state.
+ */
 export function useChromeMessages() {
-  const [panelState, setPanelState] = useState<PanelState>({ phase: "empty" });
+  const [panelState, setPanelState] = useState<PanelState>(EMPTY_STATE);
   const [tabId, setTabId] = useState<number | null>(null);
-  const [readwise, setReadwise] = useState<ReadwiseState>({
-    tags: [],
-    saveStatus: "idle",
-    error: null,
-  });
+  const [readwise, setReadwise] = useState<ReadwiseState>(EMPTY_READWISE);
 
-  const tabIdRef = useRef(tabId);
-  tabIdRef.current = tabId;
-
-  // Highest state `seq` already applied for the current tab. Lets us ignore a
-  // snapshot or broadcast that lost a delivery race with a newer one. Reset on
-  // every tab switch (seq is global, so a freshly-activated tab can be lower).
-  const lastSeqRef = useRef(-1);
-  // Live updates that land before the panelReady handshake tells us which tab we
-  // belong to. We can't match them on tabId yet, so buffer the newest per tab
-  // and reconcile once the handshake resolves — this is what stops the final
-  // summary from being dropped and leaving the panel stuck on the placeholder.
-  const pendingByTabRef = useRef<Map<number, PanelState>>(new Map());
-  // Set once the user switches the active tab, so a late panelReady response
-  // (its snapshot computed for the original tab) can't revert us.
-  const sawActiveTabChangeRef = useRef(false);
+  // The tab/window the panel is currently showing — kept in refs so the
+  // once-registered listeners always see the latest values.
+  const tabIdRef = useRef<number | null>(null);
+  const windowIdRef = useRef<number | null>(null);
 
   const retryCountRef = useRef(0);
   const retryTabIdRef = useRef<number | null>(null);
@@ -53,62 +74,86 @@ export function useChromeMessages() {
     clearRetryTimeout();
   }, [clearRetryTimeout]);
 
-  // Listen for messages before requesting the initial snapshot so we don't
-  // miss progress updates triggered by the panelReady handshake itself.
   useEffect(() => {
-    // Apply a state for the current tab, advancing the seq watermark and running
-    // the phase-driven side effects (retry/readwise resets).
-    const applyState = (nextState: PanelState) => {
-      lastSeqRef.current = Math.max(lastSeqRef.current, seqOf(nextState));
-      setPanelState(nextState);
-      if (nextState.phase === "empty" || nextState.phase === "summary") {
+    let cancelled = false;
+
+    // Render a state for the current tab, running phase-driven side effects.
+    const applyState = (state: PanelState) => {
+      if (cancelled) return;
+      setPanelState(state);
+      if (state.phase === "empty" || state.phase === "summary") {
         resetRetryState();
-      }
-      // Reset readwise state once a summary finishes streaming, not on every
-      // partial delta (which would wipe it repeatedly).
-      if (nextState.phase === "summary" && !nextState.streaming) {
-        setReadwise({ tags: [], saveStatus: "idle", error: null });
       }
     };
 
-    const listener = (
-      message: { action: string; [key: string]: unknown },
-      _sender: chrome.runtime.MessageSender,
-      sendResponse: (response: unknown) => void
+    // Point the panel at a tab and render its state. Resets per-tab UI (retry
+    // counter, readwise) only when the tab actually changes.
+    const showTab = (
+      nextTabId: number | null,
+      nextWindowId: number | null,
+      state: PanelState
     ) => {
+      if (cancelled) return;
+      if (nextWindowId != null) windowIdRef.current = nextWindowId;
+      if (nextTabId !== tabIdRef.current) {
+        tabIdRef.current = nextTabId;
+        setTabId(nextTabId);
+        resetRetryState();
+        setReadwise(EMPTY_READWISE);
+      }
+      applyState(state);
+    };
+
+    // Re-read the current tab's stored state and render it (no tab change).
+    const reread = async () => {
+      if (tabIdRef.current == null) return;
+      const { tabStates } = await chrome.storage.session.get("tabStates");
+      if (cancelled) return;
+      applyState(readTabState(tabStates, tabIdRef.current));
+    };
+
+    // Bind to a (possibly new) tab and render its stored state.
+    const loadTab = async (nextTabId: number) => {
+      const { tabStates } = await chrome.storage.session.get("tabStates");
+      if (cancelled) return;
+      showTab(nextTabId, null, readTabState(tabStates, nextTabId));
+    };
+
+    // Live state update: the worker rewrote the tabStates map. The event carries
+    // the full new map, so just re-index our tab — no re-read needed.
+    const onStorageChanged = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      areaName: string
+    ) => {
+      if (areaName !== "session" || !changes.tabStates) return;
+      if (tabIdRef.current == null) return;
+      const map = changes.tabStates.newValue as
+        | Record<string, PanelState>
+        | undefined;
+      applyState(readTabState(map, tabIdRef.current));
+    };
+
+    // Tab switched in our window — rebind using the event's own tab id.
+    const onTabActivated = (activeInfo: chrome.tabs.TabActiveInfo) => {
+      if (
+        windowIdRef.current != null &&
+        activeInfo.windowId !== windowIdRef.current
+      ) {
+        return;
+      }
+      void loadTab(activeInfo.tabId);
+    };
+
+    // The panel's JS is throttled while hidden, so it can miss change events.
+    // Reconcile from storage whenever it becomes visible again.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void reread();
+    };
+
+    // Readwise results come back as direct replies to a panel-initiated request
+    // while the panel is visible — reliable, unlike background-pushed state.
+    const onMessage = (message: { action: string; [key: string]: unknown }) => {
       switch (message.action) {
-        case "stateUpdate": {
-          const nextState = message.state as PanelState;
-          const msgTabId = message.tabId as number;
-          if (tabIdRef.current == null) {
-            // We don't know our tab yet (panelReady hasn't resolved). Buffer the
-            // freshest update per tab instead of dropping it; reconciled below.
-            const existing = pendingByTabRef.current.get(msgTabId);
-            if (!existing || seqOf(nextState) > seqOf(existing)) {
-              pendingByTabRef.current.set(msgTabId, nextState);
-            }
-          } else if (
-            msgTabId === tabIdRef.current &&
-            seqOf(nextState) > lastSeqRef.current
-          ) {
-            applyState(nextState);
-          }
-          break;
-        }
-        case "activeTabChanged": {
-          // A tab switch always wins and is the freshest snapshot for that tab,
-          // so apply unconditionally and reset the per-tab seq watermark.
-          const nextState = message.state as PanelState;
-          sawActiveTabChangeRef.current = true;
-          resetRetryState();
-          tabIdRef.current = message.tabId as number;
-          setTabId(message.tabId as number);
-          pendingByTabRef.current.clear();
-          lastSeqRef.current = seqOf(nextState);
-          setPanelState(nextState);
-          setReadwise({ tags: [], saveStatus: "idle", error: null });
-          break;
-        }
         case "readwiseTagsReceived":
           setReadwise((prev) => ({
             ...prev,
@@ -120,12 +165,6 @@ export function useChromeMessages() {
           setReadwise((prev) => ({ ...prev, saveStatus: "success" }));
           break;
         case "readwiseSaveError":
-          setReadwise((prev) => ({
-            ...prev,
-            saveStatus: "error",
-            error: message.error as string,
-          }));
-          break;
         case "readwiseTagsError":
           setReadwise((prev) => ({
             ...prev,
@@ -134,48 +173,34 @@ export function useChromeMessages() {
           }));
           break;
       }
-      sendResponse({ status: "ok" });
-      return true;
     };
 
-    chrome.runtime.onMessage.addListener(listener);
+    chrome.storage.onChanged.addListener(onStorageChanged);
+    chrome.tabs.onActivated.addListener(onTabActivated);
+    document.addEventListener("visibilitychange", onVisibility);
+    chrome.runtime.onMessage.addListener(onMessage);
 
+    // Authoritative initial bind: ask the worker which tab the panel owns and
+    // its current state (it also auto-starts summarization if the tab is empty).
     chrome.runtime.sendMessage(
       { action: "panelReady" },
       (response?: PanelReadyResponse) => {
-        if (chrome.runtime.lastError) return;
-        if (!response) return;
-
-        // The user already switched tabs — that live state wins. Don't let this
-        // snapshot (computed for the original tab) override it.
-        if (sawActiveTabChangeRef.current) return;
-
-        // Update ref immediately so later stateUpdate messages target the
-        // correct tab even before React has re-rendered.
-        tabIdRef.current = response.tabId;
-        setTabId(response.tabId);
-
-        // Pick the freshest of: this snapshot vs. any live update that arrived
-        // (and was buffered) before we knew our tab. Buffering + seq ordering is
-        // what prevents a dropped summary leaving us stuck on the placeholder.
-        let chosen: PanelState = response.state ?? { phase: "empty" };
-        if (response.tabId != null) {
-          const buffered = pendingByTabRef.current.get(response.tabId);
-          if (buffered && seqOf(buffered) > seqOf(chosen)) {
-            chosen = buffered;
-          }
-        }
-        pendingByTabRef.current.clear();
-
-        if (seqOf(chosen) > lastSeqRef.current || lastSeqRef.current < 0) {
-          applyState(chosen);
-        }
+        if (chrome.runtime.lastError || !response || cancelled) return;
+        showTab(
+          response.tabId ?? null,
+          response.windowId ?? null,
+          response.state ?? EMPTY_STATE
+        );
       }
     );
 
     return () => {
+      cancelled = true;
       clearRetryTimeout();
-      chrome.runtime.onMessage.removeListener(listener);
+      chrome.storage.onChanged.removeListener(onStorageChanged);
+      chrome.tabs.onActivated.removeListener(onTabActivated);
+      document.removeEventListener("visibilitychange", onVisibility);
+      chrome.runtime.onMessage.removeListener(onMessage);
     };
   }, [clearRetryTimeout, resetRetryState]);
 
@@ -251,7 +276,7 @@ export function useChromeMessages() {
   );
 
   const dismissReadwise = useCallback(() => {
-    setReadwise({ tags: [], saveStatus: "idle", error: null });
+    setReadwise(EMPTY_READWISE);
   }, []);
 
   return {

@@ -43,21 +43,8 @@ export interface SummaryState {
   streaming?: boolean;
 }
 
-// `seq` is a monotonic stamp the background applies to every outgoing state.
-// The panel uses it to order a panelReady snapshot against live broadcasts so a
-// stale one never overwrites a newer one (regardless of message delivery order).
-export type PanelState = (
-  | EmptyState
-  | ProgressState
-  | ErrorState
-  | SummaryState
-) & { seq?: number };
+export type PanelState = EmptyState | ProgressState | ErrorState | SummaryState;
 
 export interface ReadwiseTag {
   name: string;
-}
-
-export interface PanelReadyResponse {
-  tabId: number | null;
-  state: PanelState;
 }

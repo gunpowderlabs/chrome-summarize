@@ -7,18 +7,17 @@ import {
   mapYouTubeSummary
 } from './lib/summarize';
 
-// Per-tab state store (in-memory cache, backed by session storage)
+// Per-tab state store. The in-memory Map is the service worker's working copy;
+// chrome.storage.session is the single source of truth the side panel reads and
+// subscribes to. Every mutation is mirrored to storage via persistTabStates().
 const tabStates = new Map();
 let nextRequestId = 0;
 
-// Monotonic sequence stamped on every outgoing state so the panel can order a
-// snapshot against live broadcasts and never apply a stale one. Seeded from the
-// clock so it keeps increasing across service-worker restarts — a fresh worker
-// can't hand out a seq lower than one it already sent before restarting.
-let stateSeq = Date.now();
-function stampSeq(state) {
-  return { ...state, seq: ++stateSeq };
-}
+// The tab/window the side panel was last opened for, captured from the user
+// gesture. This is the authoritative answer to "which tab is the panel showing"
+// at mount — far more reliable than a chrome.tabs query issued from inside the
+// freshly-opened panel, which frequently resolves to the wrong tab or none.
+let lastPanelOpen = null;
 
 // Restore tab states from session storage (survives service worker restarts)
 const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates: stored }) => {
@@ -45,26 +44,15 @@ function persistTabStates() {
   chrome.storage.session.set({ tabStates: Object.fromEntries(tabStates) });
 }
 
-function broadcastTabState(tabId, state) {
-  chrome.runtime.sendMessage({
-    action: 'stateUpdate',
-    tabId: tabId,
-    state: stampSeq(state)
-  }).catch(() => {
-    // Side panel might not be open — that's fine
-  });
-}
-
-function setTabState(tabId, state, { broadcast = true, persist = true } = {}) {
+// Mutating a tab's state writes it straight to session storage. The panel
+// observes those writes via chrome.storage.onChanged — a reliable cross-context
+// channel — instead of runtime.sendMessage broadcasts, which the service worker
+// can silently drop before the panel ever receives them.
+function setTabState(tabId, state, { persist = true } = {}) {
   tabStates.set(tabId, state);
   if (persist) {
     persistTabStates();
   }
-
-  if (broadcast) {
-    broadcastTabState(tabId, state);
-  }
-
   return state;
 }
 
@@ -115,8 +103,9 @@ function updateTabStateForRequest(tabId, requestId, partialState) {
   return true;
 }
 
-// Broadcast a partial streamed summary to the panel without persisting every
-// delta to session storage — the 'progress' snapshot remains the restart fallback.
+// Publish a partial streamed summary. Each throttled delta is written to session
+// storage so the panel renders it live; STREAM_THROTTLE_MS keeps the write rate
+// sane. Session storage is in-memory, so frequent writes are cheap.
 function streamSummaryUpdate(tabId, requestId, partial) {
   if (!isCurrentRequest(tabId, requestId)) {
     return false;
@@ -131,7 +120,7 @@ function streamSummaryUpdate(tabId, requestId, partial) {
     model: CLAUDE_MODEL,
     metadata: null,
     streaming: true
-  }, { persist: false });
+  });
   return true;
 }
 
@@ -163,24 +152,23 @@ async function summarizeTabFromUserGesture(tab) {
     return;
   }
 
+  // Record the tab/window so panelReady can bind the panel to exactly this tab.
+  lastPanelOpen = { tabId: tab.id, windowId: tab.windowId };
+
   // Enable side panel for this specific tab and open it
   // setOptions must not be awaited — any await before open() breaks the user gesture chain
   chrome.sidePanel.setOptions({ tabId: tab.id, path: 'sidepanel.html', enabled: true });
 
-  // Pre-set tab state before opening the panel so panelReady picks up 'progress'
-  // instead of 'empty' (avoids a flash of the empty state)
+  // Publish the loading state before opening the panel so the panel's first read
+  // from storage already shows progress instead of the empty placeholder.
   const loadingState = createLoadingState(tab);
-  setTabState(tab.id, loadingState, { broadcast: false });
+  setTabState(tab.id, loadingState);
 
   try {
     await chrome.sidePanel.open({ tabId: tab.id });
   } catch (error) {
     console.warn('Unable to open side panel:', error);
   }
-
-  // If the panel was already open, it will not remount and won't see the
-  // preloaded state unless we actively broadcast it here.
-  updateTabState(tab.id, loadingState);
 
   const { apiKey } = await chrome.storage.sync.get(['apiKey']);
   if (!apiKey) {
@@ -380,39 +368,52 @@ async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'panelReady') {
-    // Side panel just loaded — send it the current tab's state
-    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    // Side panel just loaded — tell it which tab it owns and that tab's state.
+    (async () => {
       await stateRestored;
-      if (tabs[0]) {
-        const tab = tabs[0];
-        const tabId = tab.id;
-        let state = getTabStateSnapshot(tabId, tab);
 
-        // Auto-start summarization when panel opens with no existing state,
-        // but respond with the loading/error state immediately so the UI
-        // never has to sit in the placeholder while work is already happening.
-        if (state.phase === 'empty') {
-          const { apiKey } = await chrome.storage.sync.get(['apiKey']);
-          if (!apiKey) {
-            state = updateTabState(tabId, {
-              phase: 'error',
-              title: 'API Key Required',
-              message: 'Please set your Anthropic API key in the extension settings.',
-              errorType: 'apiKey',
-              url: state.url,
-              pageTitle: state.pageTitle
-            });
-          } else {
-            state = updateTabState(tabId, createLoadingState(tab));
-            startSummarization(tabId);
-          }
-        }
-
-        sendResponse({ tabId: tabId, state: stampSeq(state) });
-      } else {
-        sendResponse({ tabId: null, state: stampSeq({ phase: 'empty' }) });
+      // Resolve the panel's tab. Prefer the tab the user gesture opened it for;
+      // fall back to an active-tab query (e.g. after a service-worker restart
+      // dropped lastPanelOpen). The query runs in the worker, not the panel, so
+      // it isn't subject to the panel-context race that returns the wrong tab.
+      let tab = null;
+      if (lastPanelOpen) {
+        tab = await chrome.tabs.get(lastPanelOpen.tabId).catch(() => null);
       }
-    });
+      if (!tab) {
+        const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        tab = active || null;
+      }
+
+      if (!tab?.id) {
+        sendResponse({ tabId: null, windowId: null, state: { phase: 'empty' } });
+        return;
+      }
+
+      const tabId = tab.id;
+      let state = getTabStateSnapshot(tabId, tab);
+
+      // Auto-start summarization when the panel opens with no existing state,
+      // so the UI never sits in the placeholder while it could be working.
+      if (state.phase === 'empty') {
+        const { apiKey } = await chrome.storage.sync.get(['apiKey']);
+        if (!apiKey) {
+          state = updateTabState(tabId, {
+            phase: 'error',
+            title: 'API Key Required',
+            message: 'Please set your Anthropic API key in the extension settings.',
+            errorType: 'apiKey',
+            url: state.url,
+            pageTitle: state.pageTitle
+          });
+        } else {
+          state = updateTabState(tabId, createLoadingState(tab));
+          startSummarization(tabId);
+        }
+      }
+
+      sendResponse({ tabId: tabId, windowId: tab.windowId, state: state });
+    })();
     return true; // async response
   }
 
@@ -464,46 +465,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // --- Tab Event Listeners ---
-
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  await stateRestored;
-
-  // Get URL/title for the newly active tab
-  let url, title;
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    url = tab.url;
-    title = tab.title;
-  } catch (e) {
-    // Tab might be a special page
-  }
-
-  // Read state AFTER async work so concurrent startSummarization() calls
-  // are reflected (fixes empty-state flash when rapidly switching tabs)
-  const state = getTabStateSnapshot(tabId, { url, title });
-
-  chrome.runtime.sendMessage({
-    action: 'activeTabChanged',
-    tabId: tabId,
-    state: stampSeq(state)
-  }).catch(() => {});
-});
+// The side panel tracks the active tab itself (via chrome.tabs.onActivated) and
+// reads each tab's state from storage, so the worker no longer broadcasts tab
+// changes — it just keeps storage current.
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  tabStates.delete(tabId);
-  persistTabStates();
+  if (tabStates.delete(tabId)) {
+    persistTabStates();
+  }
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'loading') {
-    // Page is navigating — clear the summary for this tab
-    tabStates.delete(tabId);
-    persistTabStates();
-    chrome.runtime.sendMessage({
-      action: 'stateUpdate',
-      tabId: tabId,
-      state: stampSeq({ phase: 'empty' })
-    }).catch(() => {});
+    // Page is navigating — clear the summary. The storage write propagates to
+    // the panel if this is the tab it's currently showing.
+    if (tabStates.delete(tabId)) {
+      persistTabStates();
+    }
   }
 });
 
