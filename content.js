@@ -52,6 +52,36 @@ function hasBoilerplateAncestor(el) {
   return false;
 }
 
+// Fraction of an element's text that lives inside links. Navigation menus,
+// footers, and link lists score high; article prose scores near zero.
+function linkDensity(el) {
+  const total = (el.innerText || '').trim().length || 1;
+  let linkLen = 0;
+  el.querySelectorAll('a').forEach(a => { linkLen += (a.innerText || '').length; });
+  return linkLen / total;
+}
+
+// Distinguishes real article content from menus/widgets. A semantic container
+// like <article> is no guarantee of prose — sites wrap off-canvas nav drawers
+// in <article> too — so reject blocks that are mostly links or that carry a lot
+// of text with no paragraph structure.
+function looksLikeContent(el) {
+  const text = (el.innerText || '').trim();
+  if (text.length < 50) return false;
+  if (isBoilerplate(el) || hasBoilerplateAncestor(el)) return false;
+  if (linkDensity(el) > 0.5) return false;
+  if (text.length > 400 && el.querySelectorAll('p').length === 0) return false;
+  return true;
+}
+
+// Higher is more article-like: reward text volume and paragraph structure,
+// discount text that is mostly links.
+function scoreContent(el) {
+  const text = (el.innerText || '').trim();
+  const paragraphs = el.querySelectorAll('p').length;
+  return text.length * (1 - linkDensity(el)) + paragraphs * 100;
+}
+
 function extractMainContent() {
   // LinkedIn-specific extraction
   if (window.location.hostname.includes('linkedin.com')) {
@@ -65,28 +95,37 @@ function extractMainContent() {
     }
   }
 
-  // Common content container elements (skip if inside a cookie/consent dialog)
+  // Common content container elements. Don't trust DOM order: gather every
+  // match, drop menus/widgets, and pick the most article-like by score. A naive
+  // querySelector('article') would grab the first <article>, which on many sites
+  // is a nav drawer rather than the page content.
   const candidates = [
     'article', 'main', '#content', '[role="main"]',
     '.post', '.article', '.entry', '.content'
   ];
+  const matches = [];
+  const seen = new Set();
   for (const selector of candidates) {
-    const el = document.querySelector(selector);
-    if (el && el.innerText.trim().length > 50 && !isBoilerplate(el) && !hasBoilerplateAncestor(el)) {
-      return el.innerText;
-    }
+    document.querySelectorAll(selector).forEach(el => {
+      if (seen.has(el)) return;
+      seen.add(el);
+      if (looksLikeContent(el)) matches.push(el);
+    });
+  }
+  if (matches.length > 0) {
+    matches.sort((a, b) => scoreContent(b) - scoreContent(a));
+    return matches[0].innerText;
   }
 
-  // Text-richest div (skip cookie consent, GDPR banners, etc.)
+  // Text-richest content-like div (skip menus, cookie/GDPR banners, etc.)
   const contentDivs = Array.from(document.querySelectorAll('div'))
     .filter(div => {
       const text = div.innerText || '';
       return text.length > 200 &&
              div.querySelectorAll('p, h1, h2, h3, h4, h5, h6').length > 0 &&
-             !isBoilerplate(div) &&
-             !hasBoilerplateAncestor(div);
+             looksLikeContent(div);
     })
-    .sort((a, b) => (b.innerText || '').length - (a.innerText || '').length);
+    .sort((a, b) => scoreContent(b) - scoreContent(a));
 
   if (contentDivs.length > 0) {
     return contentDivs[0].innerText;
