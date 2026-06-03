@@ -11,6 +11,15 @@ import {
 const tabStates = new Map();
 let nextRequestId = 0;
 
+// Monotonic sequence stamped on every outgoing state so the panel can order a
+// snapshot against live broadcasts and never apply a stale one. Seeded from the
+// clock so it keeps increasing across service-worker restarts — a fresh worker
+// can't hand out a seq lower than one it already sent before restarting.
+let stateSeq = Date.now();
+function stampSeq(state) {
+  return { ...state, seq: ++stateSeq };
+}
+
 // Restore tab states from session storage (survives service worker restarts)
 const stateRestored = chrome.storage.session.get('tabStates').then(({ tabStates: stored }) => {
   if (stored) {
@@ -40,7 +49,7 @@ function broadcastTabState(tabId, state) {
   chrome.runtime.sendMessage({
     action: 'stateUpdate',
     tabId: tabId,
-    state: state
+    state: stampSeq(state)
   }).catch(() => {
     // Side panel might not be open — that's fine
   });
@@ -399,9 +408,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
 
-        sendResponse({ tabId: tabId, state: state });
+        sendResponse({ tabId: tabId, state: stampSeq(state) });
       } else {
-        sendResponse({ tabId: null, state: { phase: 'empty' } });
+        sendResponse({ tabId: null, state: stampSeq({ phase: 'empty' }) });
       }
     });
     return true; // async response
@@ -476,7 +485,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   chrome.runtime.sendMessage({
     action: 'activeTabChanged',
     tabId: tabId,
-    state: state
+    state: stampSeq(state)
   }).catch(() => {});
 });
 
@@ -493,7 +502,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     chrome.runtime.sendMessage({
       action: 'stateUpdate',
       tabId: tabId,
-      state: { phase: 'empty' }
+      state: stampSeq({ phase: 'empty' })
     }).catch(() => {});
   }
 });

@@ -7,6 +7,9 @@ export interface ReadwiseState {
   error: string | null;
 }
 
+const seqOf = (state: PanelState | undefined): number =>
+  typeof state?.seq === "number" ? state.seq : -1;
+
 export function useChromeMessages() {
   const [panelState, setPanelState] = useState<PanelState>({ phase: "empty" });
   const [tabId, setTabId] = useState<number | null>(null);
@@ -18,7 +21,19 @@ export function useChromeMessages() {
 
   const tabIdRef = useRef(tabId);
   tabIdRef.current = tabId;
-  const receivedLiveUpdateRef = useRef(false);
+
+  // Highest state `seq` already applied for the current tab. Lets us ignore a
+  // snapshot or broadcast that lost a delivery race with a newer one. Reset on
+  // every tab switch (seq is global, so a freshly-activated tab can be lower).
+  const lastSeqRef = useRef(-1);
+  // Live updates that land before the panelReady handshake tells us which tab we
+  // belong to. We can't match them on tabId yet, so buffer the newest per tab
+  // and reconcile once the handshake resolves — this is what stops the final
+  // summary from being dropped and leaving the panel stuck on the placeholder.
+  const pendingByTabRef = useRef<Map<number, PanelState>>(new Map());
+  // Set once the user switches the active tab, so a late panelReady response
+  // (its snapshot computed for the original tab) can't revert us.
+  const sawActiveTabChangeRef = useRef(false);
 
   const retryCountRef = useRef(0);
   const retryTabIdRef = useRef<number | null>(null);
@@ -41,35 +56,59 @@ export function useChromeMessages() {
   // Listen for messages before requesting the initial snapshot so we don't
   // miss progress updates triggered by the panelReady handshake itself.
   useEffect(() => {
+    // Apply a state for the current tab, advancing the seq watermark and running
+    // the phase-driven side effects (retry/readwise resets).
+    const applyState = (nextState: PanelState) => {
+      lastSeqRef.current = Math.max(lastSeqRef.current, seqOf(nextState));
+      setPanelState(nextState);
+      if (nextState.phase === "empty" || nextState.phase === "summary") {
+        resetRetryState();
+      }
+      // Reset readwise state once a summary finishes streaming, not on every
+      // partial delta (which would wipe it repeatedly).
+      if (nextState.phase === "summary" && !nextState.streaming) {
+        setReadwise({ tags: [], saveStatus: "idle", error: null });
+      }
+    };
+
     const listener = (
       message: { action: string; [key: string]: unknown },
       _sender: chrome.runtime.MessageSender,
       sendResponse: (response: unknown) => void
     ) => {
       switch (message.action) {
-        case "stateUpdate":
-          if ((message.tabId as number) === tabIdRef.current) {
-            receivedLiveUpdateRef.current = true;
-            const nextState = message.state as PanelState;
-            setPanelState(nextState);
-            if (nextState.phase === "empty" || nextState.phase === "summary") {
-              resetRetryState();
+        case "stateUpdate": {
+          const nextState = message.state as PanelState;
+          const msgTabId = message.tabId as number;
+          if (tabIdRef.current == null) {
+            // We don't know our tab yet (panelReady hasn't resolved). Buffer the
+            // freshest update per tab instead of dropping it; reconciled below.
+            const existing = pendingByTabRef.current.get(msgTabId);
+            if (!existing || seqOf(nextState) > seqOf(existing)) {
+              pendingByTabRef.current.set(msgTabId, nextState);
             }
-            // Reset readwise state once a summary finishes streaming, not on
-            // every partial delta (which would wipe it repeatedly).
-            if (nextState.phase === "summary" && !nextState.streaming) {
-              setReadwise({ tags: [], saveStatus: "idle", error: null });
-            }
+          } else if (
+            msgTabId === tabIdRef.current &&
+            seqOf(nextState) > lastSeqRef.current
+          ) {
+            applyState(nextState);
           }
           break;
-        case "activeTabChanged":
-          receivedLiveUpdateRef.current = true;
+        }
+        case "activeTabChanged": {
+          // A tab switch always wins and is the freshest snapshot for that tab,
+          // so apply unconditionally and reset the per-tab seq watermark.
+          const nextState = message.state as PanelState;
+          sawActiveTabChangeRef.current = true;
           resetRetryState();
           tabIdRef.current = message.tabId as number;
           setTabId(message.tabId as number);
-          setPanelState(message.state as PanelState);
+          pendingByTabRef.current.clear();
+          lastSeqRef.current = seqOf(nextState);
+          setPanelState(nextState);
           setReadwise({ tags: [], saveStatus: "idle", error: null });
           break;
+        }
         case "readwiseTagsReceived":
           setReadwise((prev) => ({
             ...prev,
@@ -105,16 +144,31 @@ export function useChromeMessages() {
       { action: "panelReady" },
       (response?: PanelReadyResponse) => {
         if (chrome.runtime.lastError) return;
-        if (response) {
-          // Update ref immediately so later stateUpdate messages target the
-          // correct tab even before React has re-rendered.
-          tabIdRef.current = response.tabId;
-          setTabId(response.tabId);
+        if (!response) return;
 
-          // Keep a newer live update from being replaced by an older snapshot.
-          if (!receivedLiveUpdateRef.current) {
-            setPanelState(response.state ?? { phase: "empty" });
+        // The user already switched tabs — that live state wins. Don't let this
+        // snapshot (computed for the original tab) override it.
+        if (sawActiveTabChangeRef.current) return;
+
+        // Update ref immediately so later stateUpdate messages target the
+        // correct tab even before React has re-rendered.
+        tabIdRef.current = response.tabId;
+        setTabId(response.tabId);
+
+        // Pick the freshest of: this snapshot vs. any live update that arrived
+        // (and was buffered) before we knew our tab. Buffering + seq ordering is
+        // what prevents a dropped summary leaving us stuck on the placeholder.
+        let chosen: PanelState = response.state ?? { phase: "empty" };
+        if (response.tabId != null) {
+          const buffered = pendingByTabRef.current.get(response.tabId);
+          if (buffered && seqOf(buffered) > seqOf(chosen)) {
+            chosen = buffered;
           }
+        }
+        pendingByTabRef.current.clear();
+
+        if (seqOf(chosen) > lastSeqRef.current || lastSeqRef.current < 0) {
+          applyState(chosen);
         }
       }
     );
