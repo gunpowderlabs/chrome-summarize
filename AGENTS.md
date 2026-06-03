@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working with code in this repository.
 
 ## Project Overview
 
-Chrome extension that summarizes web pages using Codex AI. Features include:
+Chrome extension that summarizes web pages using Claude AI. Features include:
 - Web page content extraction and summarization
 - YouTube video summarization via YTS native messaging integration
 - Readwise integration for saving and tagging articles
@@ -27,7 +27,7 @@ Use semantic versioning:
 - **sidepanel.html**: Vite entry point for the side panel (React)
 - **src/**: React + TypeScript source for the side panel (Tailwind CSS v4, shadcn/ui)
 - **dist/**: Built extension output (load this in Chrome)
-- **prompt.txt**: Codex AI summarization prompt template
+- **prompt.txt**: Claude AI summarization prompt template
 - **options.html/js**: Extension settings page for API keys
 - **native-host/**: YTS integration for YouTube video summarization (uses Bun runtime)
   - Requires manual installation via `install.sh`
