@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Page Summarizer",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "description": "Summarizes web pages using Claude AI",
   "permissions": ["activeTab", "scripting", "storage", "nativeMessaging", "sidePanel"],
   "host_permissions": ["https://api.anthropic.com/*", "https://readwise.io/*"],
@@ -27,15 +27,12 @@
   ],
   "options_page": "options.html",
   "commands": {
-    "summarize-page": {
+    "_execute_action": {
       "suggested_key": {
         "default": "Ctrl+Shift+S",
         "mac": "Command+Shift+S"
       },
       "description": "Summarize the current page"
-    },
-    "_execute_action": {
-      "description": "Open Page Summarizer"
     }
   }
 }

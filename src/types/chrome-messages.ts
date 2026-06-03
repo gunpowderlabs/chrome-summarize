@@ -38,6 +38,7 @@ export interface SummaryState {
   durationMs?: number | null;
   url?: string;
   pageTitle?: string;
+  streaming?: boolean;
 }
 
 export type PanelState = EmptyState | ProgressState | ErrorState | SummaryState;

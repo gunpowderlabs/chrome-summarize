@@ -5,6 +5,7 @@ import { ReadwiseUI } from "./ReadwiseUI";
 import type { YouTubeMetadata } from "@/types/chrome-messages";
 import type { ReadwiseState } from "@/hooks/use-chrome-messages";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import { Copy, BookOpen } from "lucide-react";
 
 interface SummaryStateProps {
@@ -12,6 +13,7 @@ interface SummaryStateProps {
   model: string | null;
   metadata: YouTubeMetadata | null;
   durationMs?: number | null;
+  streaming?: boolean;
   url?: string;
   pageTitle?: string;
   readwise: ReadwiseState;
@@ -47,6 +49,7 @@ export function SummaryState({
   model,
   metadata,
   durationMs,
+  streaming = false,
   url,
   pageTitle,
   readwise,
@@ -143,46 +146,57 @@ export function SummaryState({
         dangerouslySetInnerHTML={{ __html: processedHtml + metadataHtml }}
       />
 
-      {suggestedTags.length > 0 && !readwiseEnabled && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {suggestedTags.map((tag) => (
-            <Badge key={tag} variant="secondary">
-              {tag}
-            </Badge>
-          ))}
+      {streaming && (
+        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+          <Spinner className="size-3.5" />
+          Generating…
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 mt-4">
-        <Button size="sm" onClick={handleCopy}>
-          <Copy />
-          {copyLabel}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={handleReadwiseClick}>
-          <BookOpen />
-          Save to Readwise
-        </Button>
-      </div>
+      {!streaming && (
+        <>
+          {suggestedTags.length > 0 && !readwiseEnabled && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {suggestedTags.map((tag) => (
+                <Badge key={tag} variant="secondary">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          )}
 
-      {showReadwise && (
-        <ReadwiseUI
-          readwise={readwise}
-          suggestedTags={suggestedTags}
-          onSave={handleSaveToReadwise}
-          onDismiss={handleDismissReadwise}
-        />
+          <div className="flex flex-wrap gap-2 mt-4">
+            <Button size="sm" onClick={handleCopy}>
+              <Copy />
+              {copyLabel}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={handleReadwiseClick}>
+              <BookOpen />
+              Save to Readwise
+            </Button>
+          </div>
+
+          {showReadwise && (
+            <ReadwiseUI
+              readwise={readwise}
+              suggestedTags={suggestedTags}
+              onSave={handleSaveToReadwise}
+              onDismiss={handleDismissReadwise}
+            />
+          )}
+
+          <Separator className="mt-4" />
+          <div className="pt-3 text-xs text-muted-foreground">
+            {[
+              `${wordCount} words`,
+              model,
+              durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+        </>
       )}
-
-      <Separator className="mt-4" />
-      <div className="pt-3 text-xs text-muted-foreground">
-        {[
-          `${wordCount} words`,
-          model,
-          durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </div>
     </div>
   );
 }

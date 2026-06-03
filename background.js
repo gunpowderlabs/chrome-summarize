@@ -37,9 +37,11 @@ function broadcastTabState(tabId, state) {
   });
 }
 
-function setTabState(tabId, state, { broadcast = true } = {}) {
+function setTabState(tabId, state, { broadcast = true, persist = true } = {}) {
   tabStates.set(tabId, state);
-  persistTabStates();
+  if (persist) {
+    persistTabStates();
+  }
 
   if (broadcast) {
     broadcastTabState(tabId, state);
@@ -95,8 +97,30 @@ function updateTabStateForRequest(tabId, requestId, partialState) {
   return true;
 }
 
+// Broadcast partial streamed text to the panel without persisting every delta
+// to session storage — the 'progress' snapshot remains the restart fallback.
+function streamSummaryUpdate(tabId, requestId, partialSummary) {
+  if (!isCurrentRequest(tabId, requestId)) {
+    return false;
+  }
+  const current = tabStates.get(tabId) || { phase: 'empty' };
+  setTabState(tabId, {
+    ...current,
+    phase: 'summary',
+    summary: partialSummary,
+    model: CLAUDE_MODEL,
+    metadata: null,
+    streaming: true
+  }, { persist: false });
+  return true;
+}
+
 // Model used for summarization
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
+
+// Min interval between streamed UI updates (ms) — keeps the panel smooth
+// without flooding it with a message per token.
+const STREAM_THROTTLE_MS = 90;
 
 // --- State Management ---
 
@@ -166,23 +190,6 @@ function runSummarizeTabFromUserGesture(tab) {
 
 chrome.action.onClicked.addListener((tab) => {
   runSummarizeTabFromUserGesture(tab);
-});
-
-chrome.commands.onCommand.addListener((command, tab) => {
-  if (command !== 'summarize-page') {
-    return;
-  }
-
-  if (tab?.id) {
-    runSummarizeTabFromUserGesture(tab);
-    return;
-  }
-
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      runSummarizeTabFromUserGesture(tabs[0]);
-    }
-  });
 });
 
 // --- Summarization Flow ---
@@ -285,7 +292,17 @@ function handleExtractedContent(tabId, response, requestId) {
 
 async function handleSummarization(tabId, content, requestId) {
   try {
-    const result = await summarizeWithAnthropic(content, tabId);
+    let lastFlush = 0;
+    const onPartial = (text) => {
+      const now = Date.now();
+      if (now - lastFlush < STREAM_THROTTLE_MS) {
+        return;
+      }
+      lastFlush = now;
+      streamSummaryUpdate(tabId, requestId, text);
+    };
+
+    const result = await summarizeWithAnthropic(content, tabId, onPartial);
     if (!isCurrentRequest(tabId, requestId)) {
       return;
     }
@@ -295,6 +312,7 @@ async function handleSummarization(tabId, content, requestId) {
       summary: result.summary,
       model: result.model,
       metadata: null,
+      streaming: false,
       durationMs: startTime ? Date.now() - startTime : null,
       requestId: null
     });
@@ -484,7 +502,54 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 
 // --- Anthropic API ---
 
-async function summarizeWithAnthropic(content, tabId) {
+// Read an Anthropic SSE stream, appending text deltas and invoking onPartial
+// with the accumulated text. Returns the full text once the stream completes.
+async function readAnthropicStream(response, onPartial) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+
+      if (!line.startsWith('data:')) {
+        continue;
+      }
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') {
+        continue;
+      }
+
+      let event;
+      try {
+        event = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        text += event.delta.text;
+        onPartial(text);
+      } else if (event.type === 'error') {
+        throw new Error(event.error?.message || 'Streaming error from Anthropic API');
+      }
+    }
+  }
+
+  return text;
+}
+
+async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
   const result = await chrome.storage.sync.get(['apiKey', 'enableReadwise', 'readwiseToken']);
   if (!result.apiKey) {
     throw new Error('API key not set. Please set it in the extension options.');
@@ -526,6 +591,7 @@ async function summarizeWithAnthropic(content, tabId) {
       model: CLAUDE_MODEL,
       max_tokens: 1300,
       temperature: 0.7,
+      stream: true,
       system: promptTemplate,
       messages: [
         { role: 'user', content: truncatedContent }
@@ -534,13 +600,19 @@ async function summarizeWithAnthropic(content, tabId) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error?.message || `API error: ${response.status}`);
+    let message = `API error: ${response.status}`;
+    try {
+      const errorData = await response.json();
+      message = errorData.error?.message || message;
+    } catch {
+      // Non-JSON error body — fall back to the status-based message
+    }
+    throw new Error(message);
   }
 
-  const data = await response.json();
+  const summary = await readAnthropicStream(response, onPartial);
   return {
-    summary: data.content[0].text,
+    summary: summary,
     model: CLAUDE_MODEL
   };
 }

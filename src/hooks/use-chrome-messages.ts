@@ -55,8 +55,9 @@ export function useChromeMessages() {
             if (nextState.phase === "empty" || nextState.phase === "summary") {
               resetRetryState();
             }
-            // Reset readwise state when switching to a new summary
-            if (nextState.phase === "summary") {
+            // Reset readwise state once a summary finishes streaming, not on
+            // every partial delta (which would wipe it repeatedly).
+            if (nextState.phase === "summary" && !nextState.streaming) {
               setReadwise({ tags: [], saveStatus: "idle", error: null });
             }
           }
