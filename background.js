@@ -524,6 +524,15 @@ async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
     model: anthropic(CLAUDE_MODEL),
     system: buildSystemPrompt(basePrompt, availableTags),
     prompt: content.slice(0, 100000),
+    // Medium-effort adaptive thinking. Sonnet 4.6 counts thinking tokens against
+    // max_tokens, so give the output room beyond the ~1500-token summary.
+    maxOutputTokens: 8000,
+    providerOptions: {
+      anthropic: {
+        thinking: { type: 'adaptive' },
+        effort: 'medium'
+      }
+    },
     onPartial
   });
 

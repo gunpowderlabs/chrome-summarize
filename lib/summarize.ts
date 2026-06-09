@@ -117,6 +117,7 @@ export async function streamSummary({
   prompt,
   temperature = 0.7,
   maxOutputTokens = 1500,
+  providerOptions,
   onPartial = () => {},
 }: {
   model: LanguageModel;
@@ -124,15 +125,24 @@ export async function streamSummary({
   prompt: string;
   temperature?: number;
   maxOutputTokens?: number;
+  providerOptions?: Parameters<typeof streamObject>[0]["providerOptions"];
   onPartial?: (partial: Summary) => void;
 }): Promise<Summary> {
+  // Anthropic ignores sampling params (temperature/top_p/top_k) under extended
+  // thinking — it warns and silently drops them — so omit temperature whenever
+  // a thinking config is supplied.
+  const thinkingEnabled = Boolean(
+    (providerOptions?.anthropic as { thinking?: unknown } | undefined)?.thinking
+  );
+
   const { partialObjectStream, object } = streamObject({
     model,
     schema: summarySchema,
     system,
     prompt,
-    temperature,
+    ...(thinkingEnabled ? {} : { temperature }),
     maxOutputTokens,
+    providerOptions,
     // Fail fast — the side panel owns retry/backoff (see use-chrome-messages),
     // so we don't want the SDK's built-in exponential backoff on top.
     maxRetries: 0,

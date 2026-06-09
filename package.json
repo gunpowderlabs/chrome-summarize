@@ -1,6 +1,6 @@
 {
   "name": "chrome-summarize",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "Chrome extension that summarizes web pages using Claude AI",
   "type": "module",
   "scripts": {
