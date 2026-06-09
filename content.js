@@ -61,30 +61,65 @@ function linkDensity(el) {
   return linkLen / total;
 }
 
+// Counts block-level separators that signal paragraph structure. Real prose is
+// broken into blocks; nav blobs and link lists are not. Crucially, not every
+// site uses <p> — React SPAs and rich-text editors (X, Notion, etc.) lean on
+// <div>/<br>/headings — so the absence of <p> alone must not mean "unstructured".
+function blockCount(el) {
+  return el.querySelectorAll('p, br, li, h1, h2, h3, h4, h5, h6, blockquote').length;
+}
+
 // Distinguishes real article content from menus/widgets. A semantic container
 // like <article> is no guarantee of prose — sites wrap off-canvas nav drawers
 // in <article> too — so reject blocks that are mostly links or that carry a lot
-// of text with no paragraph structure.
+// of text with no block structure of any kind.
 function looksLikeContent(el) {
   const text = (el.innerText || '').trim();
   if (text.length < 50) return false;
   if (isBoilerplate(el) || hasBoilerplateAncestor(el)) return false;
   if (linkDensity(el) > 0.5) return false;
-  if (text.length > 400 && el.querySelectorAll('p').length === 0) return false;
+  if (text.length > 400 && blockCount(el) === 0) return false;
   return true;
 }
 
-// Higher is more article-like: reward text volume and paragraph structure,
+// Higher is more article-like: reward text volume and block structure,
 // discount text that is mostly links.
 function scoreContent(el) {
   const text = (el.innerText || '').trim();
-  const paragraphs = el.querySelectorAll('p').length;
-  return text.length * (1 - linkDensity(el)) + paragraphs * 100;
+  return text.length * (1 - linkDensity(el)) + blockCount(el) * 100;
 }
 
 function extractMainContent() {
+  const hostname = window.location.hostname;
+
+  // X / Twitter-specific extraction. The page is a React app with no <p> tags
+  // and a noisy right-hand sidebar (Search, "Live on X", "What's happening",
+  // trending). The generic scorer can grab that sidebar — or fall through to
+  // document.body.innerText — and summarize trending topics instead of the post.
+  // Target the primary column explicitly; it never contains the sidebar.
+  if (hostname.includes('x.com') || hostname.includes('twitter.com')) {
+    // Long-form Article reader view
+    const articleRichText = document.querySelector('[data-testid="twitterArticleRichTextView"]');
+    if (articleRichText && articleRichText.innerText.trim().length > 50) {
+      return articleRichText.innerText;
+    }
+    // Regular tweet / thread: concatenate the post text blocks in the primary column
+    const primaryColumn = document.querySelector('[data-testid="primaryColumn"]');
+    if (primaryColumn) {
+      const tweetTexts = Array.from(primaryColumn.querySelectorAll('[data-testid="tweetText"]'))
+        .map(t => t.innerText.trim())
+        .filter(Boolean);
+      if (tweetTexts.length > 0) {
+        return tweetTexts.join('\n\n');
+      }
+      if (primaryColumn.innerText.trim().length > 50) {
+        return primaryColumn.innerText;
+      }
+    }
+  }
+
   // LinkedIn-specific extraction
-  if (window.location.hostname.includes('linkedin.com')) {
+  if (hostname.includes('linkedin.com')) {
     const linkedInArticle = document.querySelector('[role="article"]');
     if (linkedInArticle) {
       const postDescription = linkedInArticle.querySelector('[class*="feed-shared-update-v2__description"]') ||
