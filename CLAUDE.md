@@ -23,7 +23,7 @@ Use semantic versioning:
 
 - **manifest.json**: Chrome extension manifest (v3) with Side Panel API
 - **background.js**: Service worker — central state manager, API calls, tab state tracking
-- **content.js**: Content script — only extracts page content (no UI)
+- **content.js**: Content script — only extracts page content via Defuddle (no UI); bundled separately (`vite.config.content.ts`)
 - **sidepanel.html**: Vite entry point for the side panel (React)
 - **src/**: React + TypeScript source for the side panel (Tailwind CSS v4, shadcn/ui)
 - **lib/**: Provider-agnostic summarization logic (AI SDK `streamObject`, Zod schema, error mapping) shared by the service worker and unit tests; `lib/summarize.test.ts` holds the tests
@@ -91,6 +91,8 @@ bun run install-native-host
 - Keys: `apiKey`, `readwiseToken`, `enableReadwise`
 
 ### Content Extraction
-- Extracts main content from web pages via content script
-- Special handling for YouTube video detection
+- Extracts main content from web pages via [Defuddle](https://github.com/kepano/defuddle) in the content script — includes site-specific extractors (X/Twitter, LinkedIn, Reddit, Substack, etc.)
+- Defuddle returns HTML; `htmlToText` in content.js flattens it to plain text, falling back to `document.body.innerText` when extraction yields too little
+- The content script is bundled separately (`vite.config.content.ts`) as an IIFE so Defuddle is inlined — MV3 content scripts can't resolve npm deps at runtime
+- Special handling for YouTube video detection (handed off to YTS, bypasses Defuddle)
 - Limits content to 100,000 characters for API calls
