@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { ReadwiseUI } from "./ReadwiseUI";
 import type { YouTubeMetadata } from "@/types/chrome-messages";
 import type { ReadwiseState } from "@/hooks/use-chrome-messages";
@@ -127,13 +128,17 @@ export function SummaryState({
   return (
     <div className="p-5">
       {tldrHtml && (
-        <>
-          <div
-            className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
-            dangerouslySetInnerHTML={{ __html: tldrHtml }}
-          />
-          <Separator className="my-4" />
-        </>
+        <Card className="mb-4 border-border/60 bg-muted/40 py-4">
+          <CardContent className="px-4">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              TL;DR
+            </div>
+            <div
+              className="prose dark:prose-invert max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-background [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
+              dangerouslySetInnerHTML={{ __html: tldrHtml }}
+            />
+          </CardContent>
+        </Card>
       )}
       <div
         className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
