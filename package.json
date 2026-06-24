@@ -1,6 +1,6 @@
 {
   "name": "chrome-summarize",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "description": "Chrome extension that summarizes web pages using Claude AI",
   "type": "module",
   "scripts": {
@@ -27,14 +27,14 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4",
     "@types/chrome": "^0.0.300",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/vite": "^4",
+    "@vitejs/plugin-react": "^6",
     "tailwindcss": "^4",
     "typescript": "^5.7",
-    "vite": "^8",
-    "@vitejs/plugin-react": "^6"
+    "vite": "8.1.0"
   },
   "keywords": [
     "chrome-extension",
