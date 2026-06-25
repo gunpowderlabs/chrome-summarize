@@ -119,6 +119,7 @@ function streamSummaryUpdate(tabId, requestId, partial) {
     tags: partial.tags || [],
     model: CLAUDE_MODEL,
     metadata: null,
+    costUsd: null,
     streaming: true
   });
   return true;
@@ -319,6 +320,7 @@ async function handleSummarization(tabId, content, requestId) {
       tags: result.summary.tags,
       model: result.model,
       metadata: null,
+      costUsd: result.costUsd,
       streaming: false,
       durationMs: startTime ? Date.now() - startTime : null,
       requestId: null
@@ -350,6 +352,7 @@ async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
       tags: result.tags,
       model: null,
       metadata: result.metadata,
+      costUsd: null,
       streaming: false,
       durationMs: startTime ? Date.now() - startTime : null
     });
@@ -533,10 +536,11 @@ async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
         effort: 'medium'
       }
     },
+    pricingModelId: CLAUDE_MODEL,
     onPartial
   });
 
-  return { summary, model: CLAUDE_MODEL };
+  return { ...summary, model: CLAUDE_MODEL };
 }
 
 // --- Readwise API ---

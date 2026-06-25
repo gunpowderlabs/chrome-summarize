@@ -6,6 +6,7 @@ import {
   normalizePartial,
   buildSystemPrompt,
   classifyError,
+  estimateCostUsd,
   mapYouTubeSummary,
   streamSummary,
   type Summary,
@@ -72,6 +73,28 @@ test("classifyError defaults to generic Processing Error", () => {
   expect(r.errorType).toBe("generic");
   expect(r.title).toBe("Processing Error");
   expect(r.message).toBe("something odd");
+});
+
+// --- estimateCostUsd ---
+
+test("estimateCostUsd calculates Claude Sonnet 4.6 input and output cost", () => {
+  expect(
+    estimateCostUsd("claude-sonnet-4-6", {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      totalTokens: 2_000_000,
+    })
+  ).toBe(18);
+});
+
+test("estimateCostUsd returns null for unknown pricing", () => {
+  expect(
+    estimateCostUsd("unknown-model", {
+      inputTokens: 1,
+      outputTokens: 1,
+      totalTokens: 2,
+    })
+  ).toBeNull();
 });
 
 // --- mapYouTubeSummary ---
@@ -144,12 +167,19 @@ test("streamSummary streams partials and returns the validated object", async ()
     model,
     system: "system prompt",
     prompt: "page content",
+    pricingModelId: "claude-sonnet-4-6",
     onPartial: (p) => partials.push(p),
   });
 
   // Final result matches and satisfies the schema.
-  expect(result).toEqual(expected);
-  expect(summarySchema.parse(result)).toEqual(expected);
+  expect(result.summary).toEqual(expected);
+  expect(summarySchema.parse(result.summary)).toEqual(expected);
+  expect(result.usage).toEqual({
+    inputTokens: 10,
+    outputTokens: 20,
+    totalTokens: 30,
+  });
+  expect(result.costUsd).toBe(0.00033);
 
   // We received at least one progressive update, and the last one is complete.
   expect(partials.length).toBeGreaterThan(0);

@@ -1,4 +1,4 @@
-import { streamObject, type LanguageModel } from "ai";
+import { streamObject, type LanguageModel, type LanguageModelUsage } from "ai";
 import { z } from "zod";
 
 // Model used for summarization.
@@ -25,6 +25,42 @@ export const summarySchema = z.object({
 
 export type Summary = z.infer<typeof summarySchema>;
 export type SummaryErrorType = "apiKey" | "rateLimit" | "generic";
+
+export type SummaryUsage = Pick<
+  LanguageModelUsage,
+  "inputTokens" | "outputTokens" | "totalTokens"
+>;
+
+export interface SummaryResult {
+  summary: Summary;
+  usage: SummaryUsage;
+  costUsd: number | null;
+}
+
+const PRICING_PER_MILLION_TOKENS: Record<
+  string,
+  { input: number; output: number }
+> = {
+  // https://platform.claude.com/docs/en/about-claude/pricing
+  "claude-sonnet-4-6": { input: 3, output: 15 },
+};
+
+export function estimateCostUsd(
+  modelId: string,
+  usage: SummaryUsage
+): number | null {
+  const pricing = PRICING_PER_MILLION_TOKENS[modelId];
+  if (!pricing) {
+    return null;
+  }
+
+  const inputTokens = usage.inputTokens ?? 0;
+  const outputTokens = usage.outputTokens ?? 0;
+
+  return (
+    (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
+  );
+}
 
 /**
  * Coerce a partial object from the stream into a stable shape. The streamed
@@ -118,6 +154,7 @@ export async function streamSummary({
   temperature = 0.7,
   maxOutputTokens = 1500,
   providerOptions,
+  pricingModelId,
   onPartial = () => {},
 }: {
   model: LanguageModel;
@@ -126,8 +163,9 @@ export async function streamSummary({
   temperature?: number;
   maxOutputTokens?: number;
   providerOptions?: Parameters<typeof streamObject>[0]["providerOptions"];
+  pricingModelId?: string;
   onPartial?: (partial: Summary) => void;
-}): Promise<Summary> {
+}): Promise<SummaryResult> {
   // Anthropic ignores sampling params (temperature/top_p/top_k) under extended
   // thinking — it warns and silently drops them — so omit temperature whenever
   // a thinking config is supplied.
@@ -135,7 +173,7 @@ export async function streamSummary({
     (providerOptions?.anthropic as { thinking?: unknown } | undefined)?.thinking
   );
 
-  const { partialObjectStream, object } = streamObject({
+  const { partialObjectStream, object, usage } = streamObject({
     model,
     schema: summarySchema,
     system,
@@ -149,16 +187,28 @@ export async function streamSummary({
   });
 
   // If the stream errors, the loop below throws and we skip the await — mark
-  // `object` handled so it never becomes an unhandled rejection (the await
-  // still re-throws into the caller's try/catch).
+  // promises handled so they never become unhandled rejections (the await still
+  // re-throws into the caller's try/catch).
   object.catch(() => {});
+  usage.catch(() => {});
 
   for await (const partial of partialObjectStream) {
     onPartial(normalizePartial(partial));
   }
 
   const final = await object;
-  return { tldr: final.tldr, summary: final.summary, tags: final.tags };
+  const finalUsage = await usage;
+  const summary = { tldr: final.tldr, summary: final.summary, tags: final.tags };
+
+  return {
+    summary,
+    usage: {
+      inputTokens: finalUsage.inputTokens,
+      outputTokens: finalUsage.outputTokens,
+      totalTokens: finalUsage.totalTokens,
+    },
+    costUsd: pricingModelId ? estimateCostUsd(pricingModelId, finalUsage) : null,
+  };
 }
 
 /**

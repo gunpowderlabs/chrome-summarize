@@ -15,6 +15,7 @@ interface SummaryStateProps {
   tags: string[];
   model: string | null;
   metadata: YouTubeMetadata | null;
+  costUsd?: number | null;
   durationMs?: number | null;
   streaming?: boolean;
   url?: string;
@@ -47,12 +48,26 @@ function processMarkdown(text: string): string {
   return html;
 }
 
+function formatCost(costUsd: number | null | undefined): string | null {
+  if (costUsd == null) {
+    return null;
+  }
+  if (costUsd > 0 && costUsd < 0.001) {
+    return "<$0.001";
+  }
+  if (costUsd < 0.01) {
+    return `$${costUsd.toFixed(3)}`;
+  }
+  return `$${costUsd.toFixed(2)}`;
+}
+
 export function SummaryState({
   tldr,
   summary = "",
   tags = [],
   model,
   metadata,
+  costUsd,
   durationMs,
   streaming = false,
   url,
@@ -86,6 +101,7 @@ export function SummaryState({
 
   const fullText = tldrText ? `${tldrText} ${summaryText}` : summaryText;
   const wordCount = fullText.trim().split(/\s+/).filter((w) => w.length > 0).length;
+  const estimatedCostLabel = formatCost(costUsd);
 
   // Check if Readwise is enabled
   useEffect(() => {
@@ -189,6 +205,7 @@ export function SummaryState({
             {[
               `${wordCount} words`,
               model,
+              estimatedCostLabel && `est. ${estimatedCostLabel}`,
               durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
             ]
               .filter(Boolean)

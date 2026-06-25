@@ -50,6 +50,7 @@ export function App() {
           tags={panelState.tags}
           model={panelState.model}
           metadata={panelState.metadata}
+          costUsd={panelState.costUsd}
           durationMs={panelState.durationMs}
           streaming={panelState.streaming}
           url={panelState.url}
