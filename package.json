@@ -1,6 +1,6 @@
 {
   "name": "chrome-summarize",
-  "version": "1.10.3",
+  "version": "1.10.4",
   "description": "Chrome extension that summarizes web pages using Claude AI",
   "type": "module",
   "scripts": {
@@ -14,8 +14,8 @@
     "install-native-host": "cd native-host && ./install.sh"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.81",
-    "ai": "^6.0.195",
+    "@ai-sdk/anthropic": "^4.0.4",
+    "ai": "^7.0.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2",
     "defuddle": "^0.18.1",

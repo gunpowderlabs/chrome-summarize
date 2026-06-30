@@ -2,7 +2,7 @@ import { streamObject, type LanguageModel, type LanguageModelUsage } from "ai";
 import { z } from "zod";
 
 // Model used for summarization.
-export const CLAUDE_MODEL = "claude-sonnet-4-6";
+export const CLAUDE_MODEL = "claude-sonnet-5";
 
 // Structured shape the model fills in — replaces the old delimiter parsing.
 export const summarySchema = z.object({
@@ -37,19 +37,40 @@ export interface SummaryResult {
   costUsd: number | null;
 }
 
+type TokenPricing = { input: number; output: number };
+type ScheduledTokenPricing = TokenPricing & { until?: Date };
+
 const PRICING_PER_MILLION_TOKENS: Record<
   string,
-  { input: number; output: number }
+  TokenPricing | ScheduledTokenPricing[]
 > = {
   // https://platform.claude.com/docs/en/about-claude/pricing
+  "claude-sonnet-5": [
+    { input: 2, output: 10, until: new Date("2026-09-01T00:00:00.000Z") },
+    { input: 3, output: 15 },
+  ],
   "claude-sonnet-4-6": { input: 3, output: 15 },
 };
 
+function getTokenPricing(modelId: string, asOf: Date): TokenPricing | null {
+  const pricing = PRICING_PER_MILLION_TOKENS[modelId];
+  if (!pricing) {
+    return null;
+  }
+
+  if (!Array.isArray(pricing)) {
+    return pricing;
+  }
+
+  return pricing.find((entry) => !entry.until || asOf < entry.until) ?? null;
+}
+
 export function estimateCostUsd(
   modelId: string,
-  usage: SummaryUsage
+  usage: SummaryUsage,
+  asOf = new Date()
 ): number | null {
-  const pricing = PRICING_PER_MILLION_TOKENS[modelId];
+  const pricing = getTokenPricing(modelId, asOf);
   if (!pricing) {
     return null;
   }

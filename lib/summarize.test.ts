@@ -1,7 +1,8 @@
 import { test, expect } from "bun:test";
 import { simulateReadableStream } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { MockLanguageModelV4 } from "ai/test";
 import {
+  CLAUDE_MODEL,
   summarySchema,
   normalizePartial,
   buildSystemPrompt,
@@ -77,13 +78,31 @@ test("classifyError defaults to generic Processing Error", () => {
 
 // --- estimateCostUsd ---
 
-test("estimateCostUsd calculates Claude Sonnet 4.6 input and output cost", () => {
+test("estimateCostUsd uses Claude Sonnet 5 launch pricing through August 2026", () => {
   expect(
-    estimateCostUsd("claude-sonnet-4-6", {
-      inputTokens: 1_000_000,
-      outputTokens: 1_000_000,
-      totalTokens: 2_000_000,
-    })
+    estimateCostUsd(
+      "claude-sonnet-5",
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        totalTokens: 2_000_000,
+      },
+      new Date("2026-08-31T23:59:59.000Z")
+    )
+  ).toBe(12);
+});
+
+test("estimateCostUsd uses Claude Sonnet 5 standard pricing from September 2026", () => {
+  expect(
+    estimateCostUsd(
+      "claude-sonnet-5",
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        totalTokens: 2_000_000,
+      },
+      new Date("2026-09-01T00:00:00.000Z")
+    )
   ).toBe(18);
 });
 
@@ -144,7 +163,6 @@ function jsonTextStream(obj: unknown) {
         usage: {
           inputTokens: { total: 10 },
           outputTokens: { total: 20 },
-          totalTokens: 30,
         },
       },
     ] as never,
@@ -158,7 +176,7 @@ test("streamSummary streams partials and returns the validated object", async ()
     tags: ["technology", "ai"],
   };
 
-  const model = new MockLanguageModelV3({
+  const model = new MockLanguageModelV4({
     doStream: async () => ({ stream: jsonTextStream(expected) }),
   });
 
@@ -167,7 +185,7 @@ test("streamSummary streams partials and returns the validated object", async ()
     model,
     system: "system prompt",
     prompt: "page content",
-    pricingModelId: "claude-sonnet-4-6",
+    pricingModelId: CLAUDE_MODEL,
     onPartial: (p) => partials.push(p),
   });
 
@@ -179,7 +197,7 @@ test("streamSummary streams partials and returns the validated object", async ()
     outputTokens: 20,
     totalTokens: 30,
   });
-  expect(result.costUsd).toBe(0.00033);
+  expect(result.costUsd).toBe(0.00022);
 
   // We received at least one progressive update, and the last one is complete.
   expect(partials.length).toBeGreaterThan(0);

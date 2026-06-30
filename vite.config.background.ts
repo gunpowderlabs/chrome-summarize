@@ -9,6 +9,18 @@ export default defineConfig({
   define: {
     "process.env.NODE_ENV": JSON.stringify("production"),
   },
+  resolve: {
+    alias: [
+      {
+        find: "node:diagnostics_channel",
+        replacement: resolve(__dirname, "src/shims/node-diagnostics-channel.ts"),
+      },
+      {
+        find: "diagnostics_channel",
+        replacement: resolve(__dirname, "src/shims/node-diagnostics-channel.ts"),
+      },
+    ],
+  },
   build: {
     outDir: "dist",
     emptyOutDir: false,
@@ -18,6 +30,11 @@ export default defineConfig({
       entry: resolve(__dirname, "background.js"),
       formats: ["es"],
       fileName: () => "background.js",
+    },
+    rollupOptions: {
+      output: {
+        codeSplitting: false,
+      },
     },
   },
 });

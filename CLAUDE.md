@@ -76,7 +76,7 @@ bun run install-native-host
 ### API Integration
 - Summarization uses the **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`) via `streamObject` for structured, streaming output — `{ tldr, summary, tags }` validated by a Zod schema in `lib/summarize.ts`
 - Calls Anthropic directly from the service worker with the `anthropic-dangerous-direct-browser-access` header
-- Model: `claude-sonnet-4-6`
+- Model: `claude-sonnet-5`
 - The service worker is bundled separately (`vite.config.background.ts`) so the SDK is inlined — MV3 service workers can't resolve npm deps at runtime
 - Readwise API for article saving and tag management
 
