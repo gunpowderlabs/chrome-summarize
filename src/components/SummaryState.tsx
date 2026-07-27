@@ -150,14 +150,14 @@ export function SummaryState({
               TL;DR
             </div>
             <div
-              className="prose dark:prose-invert max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-background [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
+              className="typeset typeset-docs max-w-[37em]"
               dangerouslySetInnerHTML={{ __html: tldrHtml }}
             />
           </CardContent>
         </Card>
       )}
       <div
-        className="prose dark:prose-invert max-w-none [&_p]:mb-3 [&_p]:text-base [&_p]:leading-relaxed [&_strong]:font-semibold [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm"
+        className="typeset typeset-docs max-w-[37em]"
         dangerouslySetInnerHTML={{ __html: processedHtml + metadataHtml }}
       />
 

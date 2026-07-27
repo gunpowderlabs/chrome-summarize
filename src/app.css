@@ -1,4 +1,22 @@
 @import "tailwindcss";
+@import "./typeset.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
+
+:root {
+  --font-inter: "Inter Variable", sans-serif;
+  --font-geist-mono: "Geist Mono Variable", monospace;
+}
+
+.typeset-docs {
+  --typeset-font-body: var(--font-inter);
+  --typeset-font-heading: var(--font-inter);
+  --typeset-font-mono: var(--font-geist-mono);
+  --typeset-size: 15px;
+  font-size: var(--typeset-size);
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+}
 
 @custom-variant dark (&:is(.dark *));
 
