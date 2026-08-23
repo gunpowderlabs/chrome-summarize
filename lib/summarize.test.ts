@@ -13,6 +13,18 @@ import {
   type Summary,
 } from "./summarize";
 
+// --- summarySchema ---
+
+test("summarySchema rejects a final summary with unfinished prose or Markdown", () => {
+  expect(
+    summarySchema.safeParse({
+      tldr: "A complete overview.",
+      summary: "The **`hidden=",
+      tags: ["html"],
+    }).success
+  ).toBe(false);
+});
+
 // --- normalizePartial ---
 
 test("normalizePartial fills missing fields with safe defaults", () => {
@@ -202,4 +214,39 @@ test("streamSummary streams partials and returns the validated object", async ()
   // We received at least one progressive update, and the last one is complete.
   expect(partials.length).toBeGreaterThan(0);
   expect(partials[partials.length - 1]).toEqual(expected);
+});
+
+test("streamSummary retries once when the final summary is incomplete", async () => {
+  const incomplete: Summary = {
+    tldr: "A complete overview.",
+    summary: "The **`hidden=",
+    tags: ["html"],
+  };
+  const expected: Summary = {
+    tldr: "A complete overview.",
+    summary: "The `hidden` attribute reveals matching content.",
+    tags: ["html"],
+  };
+  let attempts = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: jsonTextStream(attempts++ === 0 ? incomplete : expected),
+    }),
+  });
+
+  const result = await streamSummary({
+    model,
+    system: "system prompt",
+    prompt: "page content",
+    pricingModelId: CLAUDE_MODEL,
+  });
+
+  expect(attempts).toBe(2);
+  expect(result.summary).toEqual(expected);
+  expect(result.usage).toEqual({
+    inputTokens: 20,
+    outputTokens: 40,
+    totalTokens: 60,
+  });
+  expect(result.costUsd).toBe(0.00044);
 });

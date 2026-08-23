@@ -11,8 +11,11 @@ Expand on the TL;DR with details the reader hasn't seen yet. Do NOT repeat the T
 4. Use clear, straightforward language
 5. Split into paragraphs that follow the structure of the argument
 6. Do not include any headings, labels, or introductory phrases
+7. Finish every sentence and close every Markdown marker; never stop the summary mid-sentence
 
 Target length for the comprehensive summary: minimum 100 words, maximum 20% of the original content's word count. This ensures roughly 5x compression.
 
 Tags (the "tags" field)
 Choose 3-5 relevant tags that would help organize this content. Include a mix of general categories (technology, business, science, health, etc.) and specific topics mentioned (product names, companies, technologies, people). Keep tags concise (1-2 words each).
+
+Before returning the tags, verify that both prose fields end with complete sentences and have balanced Markdown formatting.

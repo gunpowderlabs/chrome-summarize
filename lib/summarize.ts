@@ -1,26 +1,60 @@
-import { streamObject, type LanguageModel, type LanguageModelUsage } from "ai";
+import {
+  streamObject,
+  type FinishReason,
+  type LanguageModel,
+  type LanguageModelUsage,
+} from "ai";
 import { z } from "zod";
 
 // Model used for summarization.
 export const CLAUDE_MODEL = "claude-sonnet-5";
 
 // Structured shape the model fills in — replaces the old delimiter parsing.
-export const summarySchema = z.object({
+const summaryOutputSchema = z.object({
   tldr: z
     .string()
     .describe(
-      "A self-contained 2-3 sentence overview (~100 words max). The bottom line: what the author argues and why it matters. Plain prose, no heading or label."
+      "A self-contained 2-3 sentence overview (~100 words max). The bottom line: what the author argues and why it matters. Plain prose, no heading or label. Finish every sentence and close every Markdown marker."
     ),
   summary: z
     .string()
     .describe(
-      "A comprehensive summary that expands on the TL;DR with supporting arguments and evidence. Do not repeat the TL;DR. Make key words and phrases bold using **double asterisks**. No headings or labels."
+      "A comprehensive summary that expands on the TL;DR with supporting arguments and evidence. Do not repeat the TL;DR. Make key words and phrases bold using **double asterisks**. No headings or labels. Finish every sentence and close every Markdown marker."
     ),
   tags: z
     .array(z.string())
     .describe(
       "3-5 concise topical tags (1-2 words each) mixing general categories and specific topics."
     ),
+});
+
+function hasCompleteProseAndMarkdown(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const unescaped = trimmed.replace(/\\./g, "");
+  const boldMarkers = unescaped.match(/\*\*/g)?.length ?? 0;
+  const backticks = unescaped.match(/`/g)?.length ?? 0;
+  if (boldMarkers % 2 !== 0 || backticks % 2 !== 0) {
+    return false;
+  }
+
+  const withoutClosingMarkdown = trimmed.replace(/(?:\*\*|__|~~|`+|\]|\))+\s*$/g, "").trim();
+  return /[.!?…]["'’”]?$/.test(withoutClosingMarkdown);
+}
+
+export const summarySchema = summaryOutputSchema.superRefine((value, context) => {
+  for (const field of ["tldr", "summary"] as const) {
+    if (!hasCompleteProseAndMarkdown(value[field])) {
+      context.addIssue({
+        code: "custom",
+        message: "Must end with complete prose and balanced Markdown.",
+        path: [field],
+      });
+    }
+  }
 });
 
 export type Summary = z.infer<typeof summarySchema>;
@@ -35,6 +69,25 @@ export interface SummaryResult {
   summary: Summary;
   usage: SummaryUsage;
   costUsd: number | null;
+}
+
+class IncompleteSummaryError extends Error {
+  constructor(finishReason: FinishReason) {
+    super(
+      finishReason === "length"
+        ? "Claude reached its output limit before completing the summary."
+        : "Claude returned an incomplete summary."
+    );
+    this.name = "IncompleteSummaryError";
+  }
+}
+
+function addUsage(total: SummaryUsage, usage: LanguageModelUsage): SummaryUsage {
+  return {
+    inputTokens: (total.inputTokens ?? 0) + (usage.inputTokens ?? 0),
+    outputTokens: (total.outputTokens ?? 0) + (usage.outputTokens ?? 0),
+    totalTokens: (total.totalTokens ?? 0) + (usage.totalTokens ?? 0),
+  };
 }
 
 type TokenPricing = { input: number; output: number };
@@ -176,6 +229,7 @@ export async function streamSummary({
   maxOutputTokens = 1500,
   providerOptions,
   pricingModelId,
+  maxIncompleteRetries = 1,
   onPartial = () => {},
 }: {
   model: LanguageModel;
@@ -185,6 +239,7 @@ export async function streamSummary({
   maxOutputTokens?: number;
   providerOptions?: Parameters<typeof streamObject>[0]["providerOptions"];
   pricingModelId?: string;
+  maxIncompleteRetries?: number;
   onPartial?: (partial: Summary) => void;
 }): Promise<SummaryResult> {
   // Anthropic ignores sampling params (temperature/top_p/top_k) under extended
@@ -194,42 +249,59 @@ export async function streamSummary({
     (providerOptions?.anthropic as { thinking?: unknown } | undefined)?.thinking
   );
 
-  const { partialObjectStream, object, usage } = streamObject({
-    model,
-    schema: summarySchema,
-    system,
-    prompt,
-    ...(thinkingEnabled ? {} : { temperature }),
-    maxOutputTokens,
-    providerOptions,
-    // Fail fast — the side panel owns retry/backoff (see use-chrome-messages),
-    // so we don't want the SDK's built-in exponential backoff on top.
-    maxRetries: 0,
-  });
+  let totalUsage: SummaryUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
-  // If the stream errors, the loop below throws and we skip the await — mark
-  // promises handled so they never become unhandled rejections (the await still
-  // re-throws into the caller's try/catch).
-  object.catch(() => {});
-  usage.catch(() => {});
+  for (let attempt = 0; attempt <= maxIncompleteRetries; attempt++) {
+    const retryInstruction =
+      attempt === 0
+        ? ""
+        : "\n\nThis is a retry because the previous result ended unexpectedly. Start over, finish every sentence, and close every Markdown marker in both prose fields before returning tags.";
+    const { partialObjectStream, object, usage, finishReason } = streamObject({
+      model,
+      schema: summaryOutputSchema,
+      system: `${system}${retryInstruction}`,
+      prompt,
+      ...(thinkingEnabled ? {} : { temperature }),
+      maxOutputTokens,
+      providerOptions,
+      // Fail fast — the side panel owns retry/backoff (see use-chrome-messages),
+      // so we don't want the SDK's built-in exponential backoff on top.
+      maxRetries: 0,
+    });
 
-  for await (const partial of partialObjectStream) {
-    onPartial(normalizePartial(partial));
+    // If the stream errors, the loop below throws and we skip the awaits — mark
+    // promises handled so they never become unhandled rejections (the await still
+    // re-throws into the caller's try/catch).
+    object.catch(() => {});
+    usage.catch(() => {});
+    finishReason.catch(() => {});
+
+    for await (const partial of partialObjectStream) {
+      onPartial(normalizePartial(partial));
+    }
+
+    const final = await object;
+    const finalUsage = await usage;
+    const finalFinishReason = await finishReason;
+    totalUsage = addUsage(totalUsage, finalUsage);
+    const validation = summarySchema.safeParse(final);
+
+    if (!validation.success || finalFinishReason === "length") {
+      if (attempt < maxIncompleteRetries) {
+        onPartial({ tldr: "", summary: "", tags: [] });
+        continue;
+      }
+      throw new IncompleteSummaryError(finalFinishReason);
+    }
+
+    return {
+      summary: validation.data,
+      usage: totalUsage,
+      costUsd: pricingModelId ? estimateCostUsd(pricingModelId, totalUsage) : null,
+    };
   }
 
-  const final = await object;
-  const finalUsage = await usage;
-  const summary = { tldr: final.tldr, summary: final.summary, tags: final.tags };
-
-  return {
-    summary,
-    usage: {
-      inputTokens: finalUsage.inputTokens,
-      outputTokens: finalUsage.outputTokens,
-      totalTokens: finalUsage.totalTokens,
-    },
-    costUsd: pricingModelId ? estimateCostUsd(pricingModelId, finalUsage) : null,
-  };
+  throw new Error("Summary generation did not complete.");
 }
 
 /**
