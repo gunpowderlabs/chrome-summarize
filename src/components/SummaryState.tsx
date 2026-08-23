@@ -8,6 +8,7 @@ import type { ReadwiseState } from "@/hooks/use-chrome-messages";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Copy, BookOpen } from "lucide-react";
+import { Streamdown } from "streamdown";
 
 interface SummaryStateProps {
   tldr: string | null;
@@ -26,26 +27,18 @@ interface SummaryStateProps {
   onDismissReadwise: () => void;
 }
 
-function escapeHtml(str: string) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function processMarkdown(text: string): string {
-  let html = escapeHtml(text);
-  html = html.replace(/^#{1,6}\s+(.*)$/gm, "$1");
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-  html = html
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-    .map((p) => `<p>${p}</p>`)
-    .join("");
-  return html;
+function SummaryMarkdown({ children, streaming }: { children: string; streaming: boolean }) {
+  return (
+    <Streamdown
+      className="space-y-0"
+      controls={false}
+      isAnimating={streaming}
+      mode={streaming ? "streaming" : "static"}
+      skipHtml
+    >
+      {children}
+    </Streamdown>
+  );
 }
 
 function formatCost(costUsd: number | null | undefined): string | null {
@@ -85,19 +78,7 @@ export function SummaryState({
   const tldrText = tldr;
   const summaryText = summary;
   const suggestedTags = tags;
-
-  const tldrHtml = tldrText ? processMarkdown(tldrText) : null;
-  const processedHtml = processMarkdown(summaryText);
-
-  // YouTube metadata HTML
-  let metadataHtml = "";
-  if (metadata) {
-    const items: string[] = [];
-    if (metadata.duration) items.push(`<strong>Duration:</strong> ${escapeHtml(metadata.duration)}`);
-    if (metadata.channel) items.push(`<strong>Channel:</strong> ${escapeHtml(metadata.channel)}`);
-    if (metadata.hasTranscript) items.push(`<strong>Source:</strong> Video transcript`);
-    if (items.length) metadataHtml = `<p>${items.join("<br>")}</p>`;
-  }
+  const showMetadata = Boolean(metadata?.duration || metadata?.channel || metadata?.hasTranscript);
 
   const fullText = tldrText ? `${tldrText} ${summaryText}` : summaryText;
   const wordCount = fullText.trim().split(/\s+/).filter((w) => w.length > 0).length;
@@ -143,23 +124,46 @@ export function SummaryState({
 
   return (
     <div className="p-5">
-      {tldrHtml && (
+      {tldrText && (
         <Card className="mb-4 border-border/60 bg-muted/40 py-4">
           <CardContent className="px-4">
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               TL;DR
             </div>
-            <div
-              className="typeset typeset-docs max-w-[37em]"
-              dangerouslySetInnerHTML={{ __html: tldrHtml }}
-            />
+            <div className="typeset typeset-docs max-w-[37em]">
+              <SummaryMarkdown streaming={streaming}>
+                {tldrText}
+              </SummaryMarkdown>
+            </div>
           </CardContent>
         </Card>
       )}
-      <div
-        className="typeset typeset-docs max-w-[37em]"
-        dangerouslySetInnerHTML={{ __html: processedHtml + metadataHtml }}
-      />
+      <div className="typeset typeset-docs max-w-[37em]">
+        <SummaryMarkdown streaming={streaming}>
+          {summaryText}
+        </SummaryMarkdown>
+        {showMetadata && metadata && (
+          <p>
+            {metadata.duration && (
+              <>
+                <strong>Duration:</strong> {metadata.duration}
+              </>
+            )}
+            {metadata.duration && (metadata.channel || metadata.hasTranscript) && <br />}
+            {metadata.channel && (
+              <>
+                <strong>Channel:</strong> {metadata.channel}
+              </>
+            )}
+            {metadata.channel && metadata.hasTranscript && <br />}
+            {metadata.hasTranscript && (
+              <>
+                <strong>Source:</strong> Video transcript
+              </>
+            )}
+          </p>
+        )}
+      </div>
 
       {streaming && (
         <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
