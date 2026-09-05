@@ -15,8 +15,31 @@
   --typeset-font-mono: var(--font-geist-mono);
   --typeset-size: 15px;
   font-size: var(--typeset-size);
-  --typeset-leading: 1.75;
-  --typeset-flow: 1.25em;
+  --typeset-leading: 1.6;
+  --typeset-flow: 0.85em;
+}
+
+/* Override Streamdown's list-inside utilities so wrapped lines align with text. */
+.typeset-docs :is(ul, ol) {
+  list-style-position: outside;
+  padding-inline-start: 1.35em;
+}
+
+.typeset-docs li {
+  padding-inline-start: 0.25em;
+  margin-block: 0;
+}
+
+.typeset-docs li + li {
+  margin-block-start: 0.85em;
+}
+
+.typeset-docs li > p {
+  margin-block: 0.5em 0;
+}
+
+.typeset-docs li > p:first-child {
+  margin-block-start: 0;
 }
 
 @custom-variant dark (&:is(.dark *));

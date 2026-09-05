@@ -123,14 +123,14 @@ export function SummaryState({
   };
 
   return (
-    <div className="p-5">
+    <div className="mx-auto w-full max-w-[42rem] p-4 sm:p-5">
       {tldrText && (
-        <Card className="mb-4 border-border/60 bg-muted/40 py-4">
+        <Card className="mb-5 gap-0 rounded-lg border-border/60 bg-muted/40 py-3 shadow-none">
           <CardContent className="px-4">
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               TL;DR
             </div>
-            <div className="typeset typeset-docs max-w-[37em]">
+            <div className="typeset typeset-docs">
               <SummaryMarkdown streaming={streaming}>
                 {tldrText}
               </SummaryMarkdown>
@@ -138,7 +138,7 @@ export function SummaryState({
           </CardContent>
         </Card>
       )}
-      <div className="typeset typeset-docs max-w-[37em]">
+      <div className="typeset typeset-docs">
         <SummaryMarkdown streaming={streaming}>
           {summaryText}
         </SummaryMarkdown>
