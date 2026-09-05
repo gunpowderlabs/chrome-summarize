@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, beforeEach, afterEach, setSystemTime } from "bun:test";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import {
@@ -155,6 +155,10 @@ test("mapYouTubeSummary falls back when fields are missing", () => {
   expect(r.metadata.duration).toBe("Unknown");
   expect(r.metadata.channel).toBe("Unknown");
 });
+
+// Keep integration cost assertions stable across pricing schedule changes.
+beforeEach(() => setSystemTime(new Date("2026-08-31T12:00:00.000Z")));
+afterEach(() => setSystemTime());
 
 // --- streamSummary (integration against the AI SDK mock model) ---
 
