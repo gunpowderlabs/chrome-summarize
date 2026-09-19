@@ -14,12 +14,12 @@ const summaryOutputSchema = z.object({
   tldr: z
     .string()
     .describe(
-      "A self-contained 2-3 sentence overview (~100 words max). The bottom line: what the author argues and why it matters. Plain prose, no heading or label. Finish every sentence and close every Markdown marker."
+      "A self-contained 1-2 sentence overview, 60 words max. State what the author argues and why it matters. Plain prose, no heading or label. Finish every sentence and close every Markdown marker."
     ),
   summary: z
     .string()
     .describe(
-      "A comprehensive summary that expands on the TL;DR with supporting arguments and evidence. Do not repeat the TL;DR. Make key words and phrases bold using **double asterisks**. No headings or labels. Finish every sentence and close every Markdown marker."
+      "A scannable 3-6 item Markdown bullet list that expands on the TL;DR with supporting arguments and evidence. Keep each bullet to 1-2 short sentences and bold at most one short phrase per bullet. Do not repeat the TL;DR or add headings. Finish every sentence and close every Markdown marker."
     ),
   tags: z
     .array(z.string())
