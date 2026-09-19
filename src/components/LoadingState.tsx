@@ -17,7 +17,7 @@ export function LoadingState({ stage, message }: LoadingStateProps) {
       detail = "Optimizing content for AI...";
       break;
     case "generating":
-      detail = "Claude is reading and summarizing...";
+      detail = "Reading and summarizing...";
       break;
     case "retrying":
       detail = "Preparing to retry...";

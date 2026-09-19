@@ -82,7 +82,7 @@ export function SummaryState({
 
   const fullText = tldrText ? `${tldrText} ${summaryText}` : summaryText;
   const wordCount = fullText.trim().split(/\s+/).filter((w) => w.length > 0).length;
-  const estimatedCostLabel = formatCost(costUsd);
+  const costLabel = formatCost(costUsd);
 
   // Check if Readwise is enabled
   useEffect(() => {
@@ -209,7 +209,7 @@ export function SummaryState({
             {[
               `${wordCount} words`,
               model,
-              estimatedCostLabel && `est. ${estimatedCostLabel}`,
+              costLabel,
               durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
             ]
               .filter(Boolean)

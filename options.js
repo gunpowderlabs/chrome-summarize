@@ -1,12 +1,12 @@
 // Saves options to chrome.storage
 function saveOptions() {
-  const apiKey = document.getElementById('apiKey').value;
+  const gatewayApiKey = document.getElementById('gatewayApiKey').value.trim();
   const readwiseToken = document.getElementById('readwiseToken').value;
   const enableReadwise = document.getElementById('enableReadwise').checked;
   
   chrome.storage.sync.set(
     { 
-      apiKey: apiKey,
+      gatewayApiKey: gatewayApiKey,
       readwiseToken: readwiseToken,
       enableReadwise: enableReadwise
     },
@@ -29,12 +29,12 @@ function saveOptions() {
 function restoreOptions() {
   chrome.storage.sync.get(
     { 
-      apiKey: '',
+      gatewayApiKey: '',
       readwiseToken: '',
       enableReadwise: false
     },
     function(items) {
-      document.getElementById('apiKey').value = items.apiKey;
+      document.getElementById('gatewayApiKey').value = items.gatewayApiKey;
       document.getElementById('readwiseToken').value = items.readwiseToken;
       document.getElementById('enableReadwise').checked = items.enableReadwise;
     }

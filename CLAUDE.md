@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Chrome extension that summarizes web pages using Claude AI. Features include:
+Chrome extension that summarizes web pages using Vercel AI Gateway. Features include:
 - Web page content extraction and summarization
 - YouTube video summarization via YTS native messaging integration
 - Readwise integration for saving and tagging articles
@@ -28,7 +28,8 @@ Use semantic versioning:
 - **src/**: React + TypeScript source for the side panel (Tailwind CSS v4, shadcn/ui)
 - **lib/**: Provider-agnostic summarization logic (AI SDK `streamObject`, Zod schema, error mapping) shared by the service worker and unit tests; `lib/summarize.test.ts` holds the tests
 - **dist/**: Built extension output (load this in Chrome)
-- **prompt.txt**: Claude AI summarization prompt template
+- **config.ts**: Editable Gateway model, reasoning level, and token/input limits
+- **prompt.txt**: Summarization prompt template
 - **options.html/js**: Extension settings page for API keys
 - **native-host/**: YTS integration for YouTube video summarization (uses Bun runtime)
   - Requires manual installation via `install.sh`
@@ -74,9 +75,10 @@ bun run install-native-host
 ## Key Implementation Details
 
 ### API Integration
-- Summarization uses the **Vercel AI SDK** (`ai` + `@ai-sdk/anthropic`) via `streamObject` for structured, streaming output — `{ tldr, summary, tags }` validated by a Zod schema in `lib/summarize.ts`
-- Calls Anthropic directly from the service worker with the `anthropic-dangerous-direct-browser-access` header
-- Model: `claude-sonnet-5`
+- Summarization uses the **Vercel AI SDK** (`ai`, including its built-in Gateway provider) via `streamObject` for structured, streaming output — `{ tldr, summary, tags }` validated by a Zod schema in `lib/summarize.ts`
+- Calls Vercel AI Gateway directly from the service worker using `createGateway` and the saved `gatewayApiKey`
+- `lib/gateway-summary.ts` applies `config.ts`; Gateway response metadata supplies request costs
+- Default model: `google/gemini-3.5-flash-lite`, with minimal reasoning (editable in `config.ts`)
 - The service worker is bundled separately (`vite.config.background.ts`) so the SDK is inlined — MV3 service workers can't resolve npm deps at runtime
 - Readwise API for article saving and tag management
 
@@ -88,7 +90,7 @@ bun run install-native-host
 
 ### Storage
 - Chrome sync storage for API keys and settings
-- Keys: `apiKey`, `readwiseToken`, `enableReadwise`
+- Keys: `gatewayApiKey`, `readwiseToken`, `enableReadwise` (legacy `apiKey` is not reused)
 
 ### Content Extraction
 - Extracts main content from web pages via [Defuddle](https://github.com/kepano/defuddle) in the content script — includes site-specific extractors (X/Twitter, LinkedIn, Reddit, Substack, etc.)

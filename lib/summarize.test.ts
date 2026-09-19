@@ -1,13 +1,11 @@
-import { test, expect, beforeEach, afterEach, setSystemTime } from "bun:test";
+import { test, expect } from "bun:test";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import {
-  CLAUDE_MODEL,
   summarySchema,
   normalizePartial,
   buildSystemPrompt,
   classifyError,
-  estimateCostUsd,
   mapYouTubeSummary,
   streamSummary,
   type Summary,
@@ -88,46 +86,6 @@ test("classifyError defaults to generic Processing Error", () => {
   expect(r.message).toBe("something odd");
 });
 
-// --- estimateCostUsd ---
-
-test("estimateCostUsd uses Claude Sonnet 5 launch pricing through August 2026", () => {
-  expect(
-    estimateCostUsd(
-      "claude-sonnet-5",
-      {
-        inputTokens: 1_000_000,
-        outputTokens: 1_000_000,
-        totalTokens: 2_000_000,
-      },
-      new Date("2026-08-31T23:59:59.000Z")
-    )
-  ).toBe(12);
-});
-
-test("estimateCostUsd uses Claude Sonnet 5 standard pricing from September 2026", () => {
-  expect(
-    estimateCostUsd(
-      "claude-sonnet-5",
-      {
-        inputTokens: 1_000_000,
-        outputTokens: 1_000_000,
-        totalTokens: 2_000_000,
-      },
-      new Date("2026-09-01T00:00:00.000Z")
-    )
-  ).toBe(18);
-});
-
-test("estimateCostUsd returns null for unknown pricing", () => {
-  expect(
-    estimateCostUsd("unknown-model", {
-      inputTokens: 1,
-      outputTokens: 1,
-      totalTokens: 2,
-    })
-  ).toBeNull();
-});
-
 // --- mapYouTubeSummary ---
 
 test("mapYouTubeSummary maps a YTS response into the structured shape", () => {
@@ -156,13 +114,9 @@ test("mapYouTubeSummary falls back when fields are missing", () => {
   expect(r.metadata.channel).toBe("Unknown");
 });
 
-// Keep integration cost assertions stable across pricing schedule changes.
-beforeEach(() => setSystemTime(new Date("2026-08-31T12:00:00.000Z")));
-afterEach(() => setSystemTime());
-
 // --- streamSummary (integration against the AI SDK mock model) ---
 
-function jsonTextStream(obj: unknown) {
+function jsonTextStream(obj: unknown, cost: unknown = "0.000053") {
   const json = JSON.stringify(obj);
   const mid = Math.floor(json.length / 2);
   // Split the JSON across two deltas to exercise partial-object streaming.
@@ -175,7 +129,8 @@ function jsonTextStream(obj: unknown) {
       { type: "text-end", id: "1" },
       {
         type: "finish",
-        finishReason: "stop",
+        finishReason: { unified: "stop", raw: "STOP" },
+        providerMetadata: { gateway: { cost } },
         usage: {
           inputTokens: { total: 10 },
           outputTokens: { total: 20 },
@@ -201,7 +156,6 @@ test("streamSummary streams partials and returns the validated object", async ()
     model,
     system: "system prompt",
     prompt: "page content",
-    pricingModelId: CLAUDE_MODEL,
     onPartial: (p) => partials.push(p),
   });
 
@@ -213,7 +167,7 @@ test("streamSummary streams partials and returns the validated object", async ()
     outputTokens: 20,
     totalTokens: 30,
   });
-  expect(result.costUsd).toBe(0.00022);
+  expect(result.costUsd).toBe(0.000053);
 
   // We received at least one progressive update, and the last one is complete.
   expect(partials.length).toBeGreaterThan(0);
@@ -242,7 +196,6 @@ test("streamSummary retries once when the final summary is incomplete", async ()
     model,
     system: "system prompt",
     prompt: "page content",
-    pricingModelId: CLAUDE_MODEL,
   });
 
   expect(attempts).toBe(2);
@@ -252,5 +205,48 @@ test("streamSummary retries once when the final summary is incomplete", async ()
     outputTokens: 40,
     totalTokens: 60,
   });
-  expect(result.costUsd).toBe(0.00044);
+  expect(result.costUsd).toBe(0.000106);
+});
+
+
+test.each([null, "", "not-a-cost", -1, {}, true])(
+  "streamSummary keeps invalid or missing Gateway cost unknown: %p",
+  async (cost) => {
+    const model = new MockLanguageModelV4({
+      doStream: async () => ({
+        stream: jsonTextStream({ tldr: "Overview.", summary: "Summary.", tags: [] }, cost),
+      }),
+    });
+    const result = await streamSummary({ model, system: "system", prompt: "page" });
+    expect(result.costUsd).toBeNull();
+  }
+);
+
+test("streamSummary preserves a reported zero cost", async () => {
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: jsonTextStream({ tldr: "Overview.", summary: "Summary.", tags: [] }, 0),
+    }),
+  });
+  const result = await streamSummary({ model, system: "system", prompt: "page" });
+  expect(result.costUsd).toBe(0);
+});
+
+test("streamSummary does not undercount cost when an earlier attempt has no cost", async () => {
+  let attempt = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: attempt++ === 0
+        ? jsonTextStream({ tldr: "Overview.", summary: "Unfinished", tags: [] }, null)
+        : jsonTextStream({ tldr: "Overview.", summary: "Summary.", tags: [] }),
+    }),
+  });
+  const result = await streamSummary({ model, system: "system", prompt: "page" });
+  expect(attempt).toBe(2);
+  expect(result.costUsd).toBeNull();
+});
+
+test("classifyError gives Gateway-specific credential and credit guidance", () => {
+  expect(classifyError({ statusCode: 401 }).message).toContain("Vercel AI Gateway API key");
+  expect(classifyError({ statusCode: 402 }).message).toContain("credits");
 });

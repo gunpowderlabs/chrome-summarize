@@ -6,9 +6,6 @@ import {
 } from "ai";
 import { z } from "zod";
 
-// Model used for summarization.
-export const CLAUDE_MODEL = "claude-sonnet-5";
-
 // Structured shape the model fills in — replaces the old delimiter parsing.
 const summaryOutputSchema = z.object({
   tldr: z
@@ -75,8 +72,8 @@ class IncompleteSummaryError extends Error {
   constructor(finishReason: FinishReason) {
     super(
       finishReason === "length"
-        ? "Claude reached its output limit before completing the summary."
-        : "Claude returned an incomplete summary."
+        ? "The model reached its output limit before completing the summary."
+        : "The model returned an incomplete summary."
     );
     this.name = "IncompleteSummaryError";
   }
@@ -90,50 +87,12 @@ function addUsage(total: SummaryUsage, usage: LanguageModelUsage): SummaryUsage 
   };
 }
 
-type TokenPricing = { input: number; output: number };
-type ScheduledTokenPricing = TokenPricing & { until?: Date };
-
-const PRICING_PER_MILLION_TOKENS: Record<
-  string,
-  TokenPricing | ScheduledTokenPricing[]
-> = {
-  // https://platform.claude.com/docs/en/about-claude/pricing
-  "claude-sonnet-5": [
-    { input: 2, output: 10, until: new Date("2026-09-01T00:00:00.000Z") },
-    { input: 3, output: 15 },
-  ],
-  "claude-sonnet-4-6": { input: 3, output: 15 },
-};
-
-function getTokenPricing(modelId: string, asOf: Date): TokenPricing | null {
-  const pricing = PRICING_PER_MILLION_TOKENS[modelId];
-  if (!pricing) {
+function gatewayCostUsd(cost: unknown): number | null {
+  if (typeof cost !== "number" && !(typeof cost === "string" && cost.trim())) {
     return null;
   }
-
-  if (!Array.isArray(pricing)) {
-    return pricing;
-  }
-
-  return pricing.find((entry) => !entry.until || asOf < entry.until) ?? null;
-}
-
-export function estimateCostUsd(
-  modelId: string,
-  usage: SummaryUsage,
-  asOf = new Date()
-): number | null {
-  const pricing = getTokenPricing(modelId, asOf);
-  if (!pricing) {
-    return null;
-  }
-
-  const inputTokens = usage.inputTokens ?? 0;
-  const outputTokens = usage.outputTokens ?? 0;
-
-  return (
-    (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
-  );
+  const value = Number(cost);
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 /**
@@ -192,12 +151,14 @@ export function classifyError(error: unknown): {
   if (status === 401 || raw.includes("401")) {
     errorType = "apiKey";
     message =
-      "Invalid API key. Please check your Anthropic API key in the extension settings.";
+      "Please check your Vercel AI Gateway API key in the extension settings.";
+  } else if (status === 402) {
+    message = "Your Vercel AI Gateway account needs credits. Check your balance in the Vercel dashboard.";
   } else if (status === 429 || raw.includes("429")) {
     errorType = "rateLimit";
     message = "Rate limit exceeded. Please wait a moment before trying again.";
   } else if ((typeof status === "number" && status >= 500 && status < 600) || raw.includes("500")) {
-    message = "Anthropic API is experiencing issues. Please try again later.";
+    message = "The AI service is experiencing issues. Please try again later.";
   } else if (
     raw.toLowerCase().includes("network") ||
     raw.toLowerCase().includes("fetch")
@@ -225,10 +186,10 @@ export async function streamSummary({
   model,
   system,
   prompt,
-  temperature = 0.7,
+  temperature,
+  reasoning,
   maxOutputTokens = 1500,
   providerOptions,
-  pricingModelId,
   maxIncompleteRetries = 1,
   onPartial = () => {},
 }: {
@@ -236,37 +197,34 @@ export async function streamSummary({
   system: string;
   prompt: string;
   temperature?: number;
+  reasoning?: Parameters<typeof streamObject>[0]["reasoning"];
   maxOutputTokens?: number;
   providerOptions?: Parameters<typeof streamObject>[0]["providerOptions"];
-  pricingModelId?: string;
   maxIncompleteRetries?: number;
   onPartial?: (partial: Summary) => void;
 }): Promise<SummaryResult> {
-  // Anthropic ignores sampling params (temperature/top_p/top_k) under extended
-  // thinking — it warns and silently drops them — so omit temperature whenever
-  // a thinking config is supplied.
-  const thinkingEnabled = Boolean(
-    (providerOptions?.anthropic as { thinking?: unknown } | undefined)?.thinking
-  );
-
   let totalUsage: SummaryUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  let totalCostUsd: number | null = 0;
 
   for (let attempt = 0; attempt <= maxIncompleteRetries; attempt++) {
     const retryInstruction =
       attempt === 0
         ? ""
         : "\n\nThis is a retry because the previous result ended unexpectedly. Start over, finish every sentence, and close every Markdown marker in both prose fields before returning tags.";
-    const { partialObjectStream, object, usage, finishReason } = streamObject({
+    const { fullStream, object, usage, finishReason, providerMetadata } = streamObject({
       model,
       schema: summaryOutputSchema,
       system: `${system}${retryInstruction}`,
       prompt,
-      ...(thinkingEnabled ? {} : { temperature }),
+      temperature,
+      reasoning,
       maxOutputTokens,
       providerOptions,
       // Fail fast — the side panel owns retry/backoff (see use-chrome-messages),
       // so we don't want the SDK's built-in exponential backoff on top.
       maxRetries: 0,
+      // Handle raw errors from fullStream below, preserving Gateway status codes.
+      onError: () => {},
     });
 
     // If the stream errors, the loop below throws and we skip the awaits — mark
@@ -275,15 +233,27 @@ export async function streamSummary({
     object.catch(() => {});
     usage.catch(() => {});
     finishReason.catch(() => {});
+    providerMetadata.catch(() => {});
 
-    for await (const partial of partialObjectStream) {
-      onPartial(normalizePartial(partial));
+    // partialObjectStream suppresses error events and can leave `object`
+    // pending after authentication/network failures. Consume errors explicitly.
+    for await (const part of fullStream) {
+      if (part.type === "error") {
+        throw part.error;
+      }
+      if (part.type === "object") {
+        onPartial(normalizePartial(part.object));
+      }
     }
 
     const final = await object;
     const finalUsage = await usage;
     const finalFinishReason = await finishReason;
     totalUsage = addUsage(totalUsage, finalUsage);
+    // Gateway reports the charged cost, including reasoning and cache usage.
+    // Keep it unknown if any attempt omits a cost, rather than undercount retries.
+    const cost = gatewayCostUsd((await providerMetadata)?.gateway?.cost);
+    totalCostUsd = totalCostUsd !== null && cost !== null ? totalCostUsd + cost : null;
     const validation = summarySchema.safeParse(final);
 
     if (!validation.success || finalFinishReason === "length") {
@@ -297,7 +267,7 @@ export async function streamSummary({
     return {
       summary: validation.data,
       usage: totalUsage,
-      costUsd: pricingModelId ? estimateCostUsd(pricingModelId, totalUsage) : null,
+      costUsd: totalCostUsd,
     };
   }
 

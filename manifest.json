@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Page Summarizer",
-  "version": "1.10.13",
-  "description": "Summarizes web pages using Claude AI",
+  "version": "1.11.0",
+  "description": "Summarizes web pages using Vercel AI Gateway",
   "permissions": ["activeTab", "scripting", "storage", "nativeMessaging", "sidePanel"],
-  "host_permissions": ["https://api.anthropic.com/*", "https://readwise.io/*"],
+  "host_permissions": ["https://ai-gateway.vercel.sh/*", "https://readwise.io/*"],
   "action": {
     "default_title": "Summarize Page",
     "default_icon": {

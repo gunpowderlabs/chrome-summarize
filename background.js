@@ -1,7 +1,6 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
+import { summarizationConfig } from './config';
+import { summarizePage } from './lib/gateway-summary';
 import {
-  CLAUDE_MODEL,
-  streamSummary,
   buildSystemPrompt,
   classifyError,
   mapYouTubeSummary
@@ -117,7 +116,7 @@ function streamSummaryUpdate(tabId, requestId, partial) {
     tldr: partial.tldr || null,
     summary: partial.summary || '',
     tags: partial.tags || [],
-    model: CLAUDE_MODEL,
+    model: summarizationConfig.model,
     metadata: null,
     costUsd: null,
     streaming: true
@@ -171,13 +170,13 @@ async function summarizeTabFromUserGesture(tab) {
     console.warn('Unable to open side panel:', error);
   }
 
-  const { apiKey } = await chrome.storage.sync.get(['apiKey']);
-  if (!apiKey) {
+  const { gatewayApiKey } = await chrome.storage.sync.get(['gatewayApiKey']);
+  if (!gatewayApiKey?.trim()) {
     // Show error in the side panel instead of opening options directly
     updateTabState(tab.id, {
       phase: 'error',
       title: 'API Key Required',
-      message: 'Please set your Anthropic API key in the extension settings.',
+      message: 'Please set your Vercel AI Gateway API key in the extension settings.',
       errorType: 'apiKey',
       url: tab.url,
       pageTitle: tab.title
@@ -287,7 +286,7 @@ function handleExtractedContent(tabId, response, requestId) {
     if (!updateTabStateForRequest(tabId, requestId, {
       phase: 'progress',
       stage: 'generating',
-      message: 'Generating summary with Claude AI...'
+      message: 'Generating summary...'
     })) {
       return;
     }
@@ -308,7 +307,7 @@ async function handleSummarization(tabId, content, requestId) {
       streamSummaryUpdate(tabId, requestId, partial);
     };
 
-    const result = await summarizeWithAnthropic(content, tabId, onPartial);
+    const result = await summarizeWithGateway(content, onPartial);
     if (!isCurrentRequest(tabId, requestId)) {
       return;
     }
@@ -399,12 +398,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // Auto-start summarization when the panel opens with no existing state,
       // so the UI never sits in the placeholder while it could be working.
       if (state.phase === 'empty') {
-        const { apiKey } = await chrome.storage.sync.get(['apiKey']);
-        if (!apiKey) {
+        const { gatewayApiKey } = await chrome.storage.sync.get(['gatewayApiKey']);
+        if (!gatewayApiKey?.trim()) {
           state = updateTabState(tabId, {
             phase: 'error',
             title: 'API Key Required',
-            message: 'Please set your Anthropic API key in the extension settings.',
+            message: 'Please set your Vercel AI Gateway API key in the extension settings.',
             errorType: 'apiKey',
             url: state.url,
             pageTitle: state.pageTitle
@@ -488,15 +487,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
 });
 
-// --- Anthropic API ---
+// --- Vercel AI Gateway ---
 
 // Stream a structured summary via the AI SDK. onPartial receives progressively
 // more complete { tldr, summary, tags } objects; the resolved value is the
 // fully validated object.
-async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
-  const result = await chrome.storage.sync.get(['apiKey', 'enableReadwise', 'readwiseToken']);
-  if (!result.apiKey) {
-    throw new Error('API key not set. Please set it in the extension options.');
+async function summarizeWithGateway(content, onPartial = () => {}) {
+  const result = await chrome.storage.sync.get(['gatewayApiKey', 'enableReadwise', 'readwiseToken']);
+  if (!result.gatewayApiKey?.trim()) {
+    throw Object.assign(new Error('Vercel AI Gateway API key not set.'), { statusCode: 401 });
   }
 
   // Get the prompt template
@@ -515,32 +514,12 @@ async function summarizeWithAnthropic(content, tabId, onPartial = () => {}) {
     }
   }
 
-  // Anthropic has no native JSON mode, so the SDK forces structure via a tool
-  // call. The dangerous-direct-browser-access header is required to call the
-  // API directly from the extension (no CORS proxy).
-  const anthropic = createAnthropic({
-    apiKey: result.apiKey,
-    headers: { 'anthropic-dangerous-direct-browser-access': 'true' }
-  });
-
-  const summary = await streamSummary({
-    model: anthropic(CLAUDE_MODEL),
+  return summarizePage({
+    apiKey: result.gatewayApiKey.trim(),
+    content,
     system: buildSystemPrompt(basePrompt, availableTags),
-    prompt: content.slice(0, 100000),
-    // Medium-effort adaptive thinking. Claude counts thinking tokens against
-    // max_tokens, so give the output room beyond the ~1500-token summary.
-    maxOutputTokens: 8000,
-    providerOptions: {
-      anthropic: {
-        thinking: { type: 'adaptive' },
-        effort: 'medium'
-      }
-    },
-    pricingModelId: CLAUDE_MODEL,
     onPartial
   });
-
-  return { ...summary, model: CLAUDE_MODEL };
 }
 
 // --- Readwise API ---

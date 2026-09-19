@@ -1,10 +1,12 @@
 # Chrome Page Summarizer Extension
 
-A Chrome extension that summarizes web pages using Claude AI and displays the summary in a sidebar.
+A Chrome extension that summarizes web pages using Gemini 3.5 Flash-Lite through Vercel AI Gateway and displays the summary in a sidebar.
 
 ## Setup
 
 ### Basic Installation
+
+First install [Bun](https://bun.sh/), then run `bun install` and `bun run build`.
 
 1. **Open Chrome Extensions Page**
    - Go to `chrome://extensions/` in your Chrome browser
@@ -15,13 +17,12 @@ A Chrome extension that summarizes web pages using Claude AI and displays the su
 
 3. **Load the Extension**
    - Click "Load unpacked"
-   - Navigate to this project's directory
+   - Navigate to this project's `dist/` directory
    - Select the folder and click "Open"
 
 4. **Configure API Key**
-   - Click the extension icon in your toolbar
-   - Click the menu (three dots) and select "Options"
-   - Enter your Anthropic API key
+   - Open the extension's "Details" on `chrome://extensions/`, then "Extension options"
+   - Enter your Vercel AI Gateway API key
    - (Optional) Add Readwise token if you want article saving
 
 5. **Verify Installation**
@@ -43,7 +44,7 @@ This requires the YTS tool at `~/dev/yts/bin/yts.js`.
 
 1. Navigate to any web page
 2. Click the extension icon in your Chrome toolbar or use the keyboard shortcut (Ctrl+Shift+S on Windows/Linux, Command+Shift+S on Mac)
-3. The extension will extract the main content, send it to Claude for summarization, and display the summary in a sidebar
+3. The extension will extract the main content, send it through AI Gateway for summarization, and display the summary in a sidebar
 
 ## Keyboard Shortcut
 
@@ -56,13 +57,41 @@ You can customize these shortcuts in Chrome by going to:
 2. Find "Page Summarizer" in the list
 3. Click the pencil icon and set your preferred shortcut
 
+## Model Configuration
+
+Edit `config.ts` to change the web-page summarization model:
+
+```ts
+model: "google/gemini-3.5-flash-lite",
+reasoning: "minimal",
+```
+
+Use a model ID from the [AI Gateway catalog](https://vercel.com/ai-gateway/models).
+When switching models, choose a reasoning level that model supports, or set
+`reasoning` to `"provider-default"`. The same file controls the input character
+limit and output token budget. The current 4,096-token output limit leaves room
+for the summary and minimal reasoning; it is a ceiling, not a target length.
+
+After editing, run `bun run build` and reload the extension on
+`chrome://extensions/`. These settings apply to web pages; YouTube continues to
+use the separately configured YTS native host.
+
+The summary footer displays the model and Gateway-reported request cost,
+including any incomplete-summary retry. If Gateway omits cost metadata, the
+footer omits the cost rather than estimating it with another model's rates.
+
 ## Customizing the Summary
 
-You can customize how Claude summarizes content by editing the `prompt.txt` file. This file contains the system message that guides Claude's summarization style.
+Edit `prompt.txt` to change the summary style, then rebuild and reload. The model
+returns a structured TL;DR, Markdown bullet summary, and topical tags.
 
 ## API Key Configuration
 
-This extension requires an Anthropic API key to function. Your API key is stored securely in Chrome's sync storage and is only used to make API calls to Anthropic's Claude service. You can update or change your API key at any time through the extension's options page.
+Create an API key in your [Vercel AI Gateway dashboard](https://vercel.com/dashboard/ai-gateway)
+and save it in the extension's options page. The extension stores it under
+`gatewayApiKey` in Chrome sync storage and sends requests directly to
+`https://ai-gateway.vercel.sh` from its service worker.
 
-**Note:** This extension calls the Anthropic API directly from the browser. While convenient for personal use, this method uses the `anthropic-dangerous-direct-browser-access` header, which is not recommended for production applications. For production deployments, consider using a proxy server to handle API calls.
-
+If upgrading from the Anthropic version, enter a Gateway key after reloading.
+The old Anthropic key is not reused or sent to Vercel. Readwise settings are
+preserved. API keys belong in the options page, not in `config.ts` or the bundle.
