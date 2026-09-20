@@ -11,12 +11,12 @@ const summaryOutputSchema = z.object({
   tldr: z
     .string()
     .describe(
-      "A self-contained 1-2 sentence overview, 60 words max. State what the author argues and why it matters. Plain prose, no heading or label. Finish every sentence and close every Markdown marker."
+      "A self-contained 1-2 sentence overview, 60 words max. For articles, state what the author argues and why it matters. For product pages, name the product, what it does, who it is for, and the main problem it addresses. Plain prose, no heading or label. Finish every sentence and close every Markdown marker."
     ),
   summary: z
     .string()
     .describe(
-      "Start with a scannable 3-6 item Markdown bullet list that expands on the TL;DR with supporting arguments and evidence. Keep each bullet to 1-2 short sentences and bold at most one short phrase per bullet. Do not repeat the TL;DR or add a heading before the bullets. Then add the heading '## Apply this to your life' and a numbered implementation guide, usually 3-6 concrete steps in the order the reader should take them. Address the reader as 'you' and ground each suggested action in the article without inventing personal details or claims. If no useful personal application exists, briefly explain why under the heading instead of inventing steps. The guide is separate from the TL;DR and summary bullets' word limit. Finish every sentence and close every Markdown marker."
+      "Start with a scannable 3-6 item Markdown bullet list that expands on the TL;DR. For articles, include supporting arguments and evidence. For product pages, prioritize problems solved, relevant features and limits, and a pricing bullet. Preserve stated prices, currencies, plans, billing terms, and free-plan or trial distinctions. Report contact-sales pricing when stated; otherwise, if no price is supplied, say 'Pricing is not stated on this page.' Never guess pricing or use remembered prices. Attribute unverified claims to the seller. Keep each bullet to 1-2 short sentences and bold at most one short phrase per bullet. Do not repeat the TL;DR or add a heading before the bullets. Then add the heading '## Apply this to your life' and a numbered implementation guide, usually 3-6 concrete steps in the order the reader should take them. Address the reader as 'you' and ground each suggested action in the source without inventing personal details or claims. For product pages, help the reader assess fit and try a relevant use case using only capabilities and instructions on the page, without assuming a purchase. If no useful personal application exists, briefly explain why under the heading instead of inventing steps. The guide is separate from the TL;DR and summary bullets' word limit. Finish every sentence and close every Markdown marker."
     ),
   tags: z
     .array(z.string())
