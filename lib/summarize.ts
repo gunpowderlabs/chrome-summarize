@@ -16,7 +16,7 @@ const summaryOutputSchema = z.object({
   summary: z
     .string()
     .describe(
-      "A scannable 3-6 item Markdown bullet list that expands on the TL;DR with supporting arguments and evidence. Keep each bullet to 1-2 short sentences and bold at most one short phrase per bullet. Do not repeat the TL;DR or add headings. Finish every sentence and close every Markdown marker."
+      "Start with a scannable 3-6 item Markdown bullet list that expands on the TL;DR with supporting arguments and evidence. Keep each bullet to 1-2 short sentences and bold at most one short phrase per bullet. Do not repeat the TL;DR or add a heading before the bullets. Then add the heading '## Apply this to your life' and a numbered implementation guide, usually 3-6 concrete steps in the order the reader should take them. Address the reader as 'you' and ground each suggested action in the article without inventing personal details or claims. If no useful personal application exists, briefly explain why under the heading instead of inventing steps. The guide is separate from the TL;DR and summary bullets' word limit. Finish every sentence and close every Markdown marker."
     ),
   tags: z
     .array(z.string())

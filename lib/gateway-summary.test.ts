@@ -4,7 +4,11 @@ import { summarizePage } from "./gateway-summary";
 import { classifyError, type Summary } from "./summarize";
 
 test("summarizePage sends configured structured requests through the real Gateway adapter", async () => {
-  const expected = { tldr: "The main point.", summary: "- Supporting evidence.", tags: ["test"] };
+  const expected = {
+    tldr: "Small experiments help you test a new habit.",
+    summary: "- The author recommends trying one change before committing to it.\n\n## Apply this to your life\n\n1. Pick one habit you want to try today and write down what you expect to change.\n2. After trying it, compare the result with your expectation and decide whether to repeat it.",
+    tags: ["habits"],
+  };
   const json = JSON.stringify(expected);
   const partials: Summary[] = [];
   let requests = 0;
