@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { ReadwiseUI } from "./ReadwiseUI";
 import type { YouTubeMetadata } from "@/types/chrome-messages";
 import type { ReadwiseState } from "@/hooks/use-chrome-messages";
@@ -125,18 +124,14 @@ export function SummaryState({
   return (
     <div className="mx-auto w-full max-w-[42rem] p-4 sm:p-5">
       {tldrText && (
-        <Card className="mb-5 gap-0 rounded-lg border-border/60 bg-muted/40 py-3 shadow-none">
-          <CardContent className="px-4">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              TL;DR
-            </div>
-            <div className="typeset typeset-docs">
-              <SummaryMarkdown streaming={streaming}>
-                {tldrText}
-              </SummaryMarkdown>
-            </div>
-          </CardContent>
-        </Card>
+        <>
+          <div className="typeset typeset-docs">
+            <SummaryMarkdown streaming={streaming}>
+              {tldrText}
+            </SummaryMarkdown>
+          </div>
+          <Separator className="my-5" />
+        </>
       )}
       <div className="typeset typeset-docs">
         <SummaryMarkdown streaming={streaming}>
