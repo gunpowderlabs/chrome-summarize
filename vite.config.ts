@@ -49,6 +49,13 @@ export default defineConfig({
       input: {
         sidepanel: resolve(__dirname, "sidepanel.html"),
       },
+      output: {
+        // Split the renderer dependencies while preserving module initialization order.
+        strictExecutionOrder: true,
+        codeSplitting: {
+          groups: [{ name: "vendor", test: /node_modules/, maxSize: 250_000 }],
+        },
+      },
     },
   },
 });
