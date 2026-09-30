@@ -8,6 +8,8 @@ import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Copy, BookOpen } from "lucide-react";
 import { Streamdown } from "streamdown";
+import { ApplyPrompt } from "./ApplyPrompt";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface SummaryStateProps {
   tldr: string | null;
@@ -123,95 +125,106 @@ export function SummaryState({
 
   return (
     <div className="mx-auto w-full max-w-[42rem] p-4 sm:p-5">
-      {tldrText && (
-        <>
+      <Tabs defaultValue="summary" className="gap-5">
+        <TabsList aria-label="Resource views">
+          <TabsTrigger value="summary">Summary</TabsTrigger>
+          <TabsTrigger value="prompt">Prompt</TabsTrigger>
+        </TabsList>
+        <TabsContent value="summary" className="min-w-0">
+          {tldrText && (
+            <>
+              <div className="typeset typeset-docs">
+                <SummaryMarkdown streaming={streaming}>
+                  {tldrText}
+                </SummaryMarkdown>
+              </div>
+              <Separator className="my-5" />
+            </>
+          )}
           <div className="typeset typeset-docs">
             <SummaryMarkdown streaming={streaming}>
-              {tldrText}
+              {summaryText}
             </SummaryMarkdown>
+            {showMetadata && metadata && (
+              <p>
+                {metadata.duration && (
+                  <>
+                    <strong>Duration:</strong> {metadata.duration}
+                  </>
+                )}
+                {metadata.duration && (metadata.channel || metadata.hasTranscript) && <br />}
+                {metadata.channel && (
+                  <>
+                    <strong>Channel:</strong> {metadata.channel}
+                  </>
+                )}
+                {metadata.channel && metadata.hasTranscript && <br />}
+                {metadata.hasTranscript && (
+                  <>
+                    <strong>Source:</strong> Video transcript
+                  </>
+                )}
+              </p>
+            )}
           </div>
-          <Separator className="my-5" />
-        </>
-      )}
-      <div className="typeset typeset-docs">
-        <SummaryMarkdown streaming={streaming}>
-          {summaryText}
-        </SummaryMarkdown>
-        {showMetadata && metadata && (
-          <p>
-            {metadata.duration && (
-              <>
-                <strong>Duration:</strong> {metadata.duration}
-              </>
-            )}
-            {metadata.duration && (metadata.channel || metadata.hasTranscript) && <br />}
-            {metadata.channel && (
-              <>
-                <strong>Channel:</strong> {metadata.channel}
-              </>
-            )}
-            {metadata.channel && metadata.hasTranscript && <br />}
-            {metadata.hasTranscript && (
-              <>
-                <strong>Source:</strong> Video transcript
-              </>
-            )}
-          </p>
-        )}
-      </div>
 
-      {streaming && (
-        <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-          <Spinner className="size-3.5" />
-          Generating…
-        </div>
-      )}
-
-      {!streaming && (
-        <>
-          {suggestedTags.length > 0 && !readwiseEnabled && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {suggestedTags.map((tag) => (
-                <Badge key={tag} variant="secondary">
-                  {tag}
-                </Badge>
-              ))}
+          {streaming && (
+            <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <Spinner className="size-3.5" />
+              Generating…
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button size="sm" onClick={handleCopy}>
-              <Copy />
-              {copyLabel}
-            </Button>
-            <Button size="sm" variant="secondary" onClick={handleReadwiseClick}>
-              <BookOpen />
-              Save to Readwise
-            </Button>
-          </div>
+          {!streaming && (
+            <>
+              {suggestedTags.length > 0 && !readwiseEnabled && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {suggestedTags.map((tag) => (
+                    <Badge key={tag} variant="secondary">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
-          {showReadwise && (
-            <ReadwiseUI
-              readwise={readwise}
-              suggestedTags={suggestedTags}
-              onSave={handleSaveToReadwise}
-              onDismiss={handleDismissReadwise}
-            />
+              <div className="flex flex-wrap gap-2 mt-4">
+                <Button size="sm" onClick={handleCopy}>
+                  <Copy />
+                  {copyLabel}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={handleReadwiseClick}>
+                  <BookOpen />
+                  Save to Readwise
+                </Button>
+              </div>
+
+              {showReadwise && (
+                <ReadwiseUI
+                  readwise={readwise}
+                  suggestedTags={suggestedTags}
+                  onSave={handleSaveToReadwise}
+                  onDismiss={handleDismissReadwise}
+                />
+              )}
+
+              <Separator className="mt-4" />
+              <div className="pt-3 text-xs text-muted-foreground">
+                {[
+                  `${wordCount} words`,
+                  model,
+                  costLabel,
+                  durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+            </>
           )}
-
-          <Separator className="mt-4" />
-          <div className="pt-3 text-xs text-muted-foreground">
-            {[
-              `${wordCount} words`,
-              model,
-              costLabel,
-              durationMs != null && `${(durationMs / 1000).toFixed(1)}s`,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
-        </>
-      )}
+        </TabsContent>
+        <TabsContent value="prompt" className="min-w-0">
+          <ApplyPrompt key={url} url={url} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

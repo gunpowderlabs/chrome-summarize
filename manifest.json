@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Page Summarizer",
-  "version": "1.13.1",
+  "version": "1.14.0",
   "description": "Summarizes web pages using Vercel AI Gateway",
   "permissions": ["activeTab", "scripting", "storage", "nativeMessaging", "sidePanel"],
   "host_permissions": ["https://ai-gateway.vercel.sh/*", "https://readwise.io/*"],

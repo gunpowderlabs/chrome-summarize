@@ -45,6 +45,7 @@ This requires the YTS tool at `~/dev/yts/bin/yts.js`.
 1. Navigate to any web page
 2. Click the extension icon in your Chrome toolbar or use the keyboard shortcut (Ctrl+Shift+S on Windows/Linux, Command+Shift+S on Mac)
 3. The extension will extract the main content, send it through AI Gateway for summarization, and display the summary in a sidebar
+4. To apply the resource to your life, open the **Prompt** tab and click **Copy prompt**. Paste it into your AI chat. The prompt includes the resource link and asks for practical steps based on your goals and circumstances. It does not include the summary.
 
 ## Keyboard Shortcut
 
