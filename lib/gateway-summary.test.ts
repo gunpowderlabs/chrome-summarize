@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { NoObjectGeneratedError } from "ai";
 import { summarizationConfig } from "../config";
 import { summarizePage } from "./gateway-summary";
 import { classifyError, type Summary } from "./summarize";
@@ -73,5 +74,108 @@ test("Gateway authentication failures reach the settings error without retrying"
   } catch (error) {
     expect(classifyError(error).errorType).toBe("apiKey");
   }
+  expect(requests).toBe(1);
+});
+
+function gatewayTextResponse(text: string, finishReason = "stop", cost: unknown = "0.000155") {
+  const chunks = [
+    { type: "stream-start", warnings: [] },
+    { type: "text-start", id: "1" },
+    { type: "text-delta", id: "1", delta: text },
+    { type: "text-end", id: "1" },
+    {
+      type: "finish", finishReason: { unified: finishReason, raw: finishReason.toUpperCase() },
+      usage: { inputTokens: { total: 100 }, outputTokens: { total: 50 } },
+      providerMetadata: { gateway: { cost } },
+    },
+  ];
+  return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join(""), {
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+test.each([
+  ["malformed JSON", '{"tldr":"Overview.","summary":"- Say "hello" today.","tags":[]}', "stop"],
+  ["schema mismatch", '{"tldr":"Overview.","summary":42,"tags":[]}', "stop"],
+  ["truncated JSON", '{"tldr":"Overview.","summary":"- Say hello', "length"],
+  ["empty response", "", "stop"],
+])("Gateway %s is retried instead of surfacing a parse error", async (_, text, finishReason) => {
+  const expected = { tldr: "Overview.", summary: "- Say hello today.", tags: [] };
+  const partials: Summary[] = [];
+  let requests = 0;
+  const result = await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    onPartial: (partial) => partials.push(partial),
+    fetch: async (_url, init) => {
+      const body = JSON.parse(init?.body as string);
+      if (requests++ === 0) {
+        return gatewayTextResponse(text, finishReason);
+      }
+      expect(body.prompt[0].content).toContain("single valid JSON object");
+      expect(body.maxOutputTokens).toBe(summarizationConfig.maxOutputTokens * (finishReason === "length" ? 2 : 1));
+      return gatewayTextResponse(JSON.stringify(expected));
+    },
+  });
+  expect(requests).toBe(2);
+  expect(result.summary).toEqual(expected);
+  expect(result.usage).toEqual({ inputTokens: 200, outputTokens: 100, totalTokens: 300 });
+  expect(result.costUsd).toBe(0.00031);
+  expect(partials).toContainEqual({ tldr: "", summary: "", tags: [] });
+});
+
+test.each([
+  ["stop", "The AI service returned a summary in an invalid format. Please try again."],
+  ["length", "The model reached its output limit before completing the summary. Please try again."],
+])("Gateway invalid output stops after one retry with useful guidance (%s)", async (finishReason, message) => {
+  let requests = 0;
+  const error = await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    fetch: async () => {
+      requests++;
+      return gatewayTextResponse('{"tldr":"Unfinished', finishReason);
+    },
+  }).then(() => null, (error) => error);
+  expect(requests).toBe(2);
+  expect(NoObjectGeneratedError.isInstance(error)).toBe(true);
+  expect(classifyError(error)).toEqual({ errorType: "generic", title: "Processing Error", message });
+});
+
+test("Gateway retries keep cost unknown when malformed output has no cost", async () => {
+  let requests = 0;
+  const result = await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    fetch: async () => requests++ === 0
+      ? gatewayTextResponse("invalid JSON", "stop", null)
+      : gatewayTextResponse(JSON.stringify({ tldr: "Overview.", summary: "Summary.", tags: [] })),
+  });
+  expect(requests).toBe(2);
+  expect(result.costUsd).toBeNull();
+});
+
+test.each([402, 429, 503])("Gateway HTTP %i failures are not retried as malformed output", async (status) => {
+  let requests = 0;
+  const error = await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    fetch: async () => {
+      requests++;
+      return Response.json({ error: { message: "Service error" } }, { status });
+    },
+  }).then(() => null, (error) => error);
+  expect(error).not.toBeNull();
+  expect(NoObjectGeneratedError.isInstance(error)).toBe(false);
+  expect(requests).toBe(1);
+});
+
+test("Gateway network failures are not retried as malformed output", async () => {
+  let requests = 0;
+  const error = await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    fetch: async () => {
+      requests++;
+      throw new TypeError("network request failed");
+    },
+  }).then(() => null, (error) => error);
+  expect(error).not.toBeNull();
+  expect(NoObjectGeneratedError.isInstance(error)).toBe(false);
   expect(requests).toBe(1);
 });

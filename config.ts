@@ -8,6 +8,7 @@ export const summarizationConfig = {
   // Minimal thinking keeps Flash-Lite responsive. When switching models,
   // choose a supported level, or use "provider-default".
   reasoning: "minimal",
+  // Initial budget; a retry gets twice this only if the model hits the limit.
   maxOutputTokens: 4096,
   maxInputCharacters: 100_000,
 } satisfies {

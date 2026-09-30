@@ -1,4 +1,5 @@
 import {
+  NoObjectGeneratedError,
   streamObject,
   type FinishReason,
   type LanguageModel,
@@ -159,6 +160,10 @@ export function classifyError(error: unknown): {
     message = "Rate limit exceeded. Please wait a moment before trying again.";
   } else if ((typeof status === "number" && status >= 500 && status < 600) || raw.includes("500")) {
     message = "The AI service is experiencing issues. Please try again later.";
+  } else if (NoObjectGeneratedError.isInstance(error)) {
+    message = error.finishReason === "length"
+      ? "The model reached its output limit before completing the summary. Please try again."
+      : "The AI service returned a summary in an invalid format. Please try again.";
   } else if (
     raw.toLowerCase().includes("network") ||
     raw.toLowerCase().includes("fetch")
@@ -205,12 +210,13 @@ export async function streamSummary({
 }): Promise<SummaryResult> {
   let totalUsage: SummaryUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   let totalCostUsd: number | null = 0;
+  let outputTokenBudget = maxOutputTokens;
 
   for (let attempt = 0; attempt <= maxIncompleteRetries; attempt++) {
     const retryInstruction =
       attempt === 0
         ? ""
-        : "\n\nThis is a retry because the previous result ended unexpectedly. Start over, finish every sentence, and close every Markdown marker in both prose fields before returning tags.";
+        : "\n\nThe previous response was invalid or incomplete. Start over and return a single valid JSON object with string fields tldr and summary and an array of strings in tags. Escape quotation marks, backslashes, and newlines inside JSON strings. Do not wrap the JSON in Markdown fences or add text outside the object. Keep the summary concise, finish every sentence, and close every Markdown marker in both prose fields before returning tags.";
     const { fullStream, object, usage, finishReason, providerMetadata } = streamObject({
       model,
       schema: summaryOutputSchema,
@@ -218,7 +224,7 @@ export async function streamSummary({
       prompt,
       temperature,
       reasoning,
-      maxOutputTokens,
+      maxOutputTokens: outputTokenBudget,
       providerOptions,
       // Fail fast — the side panel owns retry/backoff (see use-chrome-messages),
       // so we don't want the SDK's built-in exponential backoff on top.
@@ -246,7 +252,16 @@ export async function streamSummary({
       }
     }
 
-    const final = await object;
+    let final: Summary | undefined;
+    let outputError: NoObjectGeneratedError | undefined;
+    try {
+      final = await object;
+    } catch (error) {
+      if (!NoObjectGeneratedError.isInstance(error)) throw error;
+      // Parsing/schema failures reject `object` before our prose checks. The
+      // SDK has already resolved usage and metadata for these finished requests.
+      outputError = error;
+    }
     const finalUsage = await usage;
     const finalFinishReason = await finishReason;
     totalUsage = addUsage(totalUsage, finalUsage);
@@ -258,10 +273,13 @@ export async function streamSummary({
 
     if (!validation.success || finalFinishReason === "length") {
       if (attempt < maxIncompleteRetries) {
+        if (finalFinishReason === "length") {
+          outputTokenBudget = maxOutputTokens * 2;
+        }
         onPartial({ tldr: "", summary: "", tags: [] });
         continue;
       }
-      throw new IncompleteSummaryError(finalFinishReason);
+      throw outputError ?? new IncompleteSummaryError(finalFinishReason);
     }
 
     return {
