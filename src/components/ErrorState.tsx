@@ -1,15 +1,29 @@
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
+import { useState } from "react";
 
 interface ErrorStateProps {
   title: string;
   message: string;
   errorType: "apiKey" | "rateLimit" | "generic";
   onRetry: () => void;
+  diagnosticsRequestId?: string;
 }
 
-export function ErrorState({ title, message, errorType, onRetry }: ErrorStateProps) {
+export function ErrorState({ title, message, errorType, onRetry, diagnosticsRequestId }: ErrorStateProps) {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copying" | "copied" | "error">("idle");
+  const copyDiagnostics = async () => {
+    setCopyStatus("copying");
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "getSummaryDiagnostics", requestId: diagnosticsRequestId });
+      if (!response?.ok || !response.report?.records?.length) throw new Error("No saved diagnostics.");
+      await navigator.clipboard.writeText(JSON.stringify(response.report, null, 2));
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    }
+  };
   return (
     <div className="p-5">
       <Alert variant="destructive">
@@ -64,7 +78,17 @@ export function ErrorState({ title, message, errorType, onRetry }: ErrorStatePro
             </Button>
           </>
         )}
+        {diagnosticsRequestId && (
+          <Button size="sm" variant="secondary" disabled={copyStatus === "copying"} onClick={copyDiagnostics}>
+            {copyStatus === "copied" ? "Diagnostics copied" : copyStatus === "copying" ? "Copying..." : "Copy diagnostics"}
+          </Button>
+        )}
       </div>
+      {copyStatus === "error" && (
+        <p role="status" className="mt-3 text-sm text-muted-foreground">
+          Could not copy diagnostics. Open Settings to export saved logs.
+        </p>
+      )}
     </div>
   );
 }

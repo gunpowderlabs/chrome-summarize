@@ -21,6 +21,7 @@ export interface ErrorState {
   errorType: "apiKey" | "rateLimit" | "generic";
   url?: string;
   pageTitle?: string;
+  diagnosticsRequestId?: string;
 }
 
 export interface YouTubeMetadata {

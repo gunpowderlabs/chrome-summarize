@@ -1,6 +1,6 @@
 {
   "name": "chrome-summarize",
-  "version": "1.14.1",
+  "version": "1.15.0",
   "description": "Chrome extension that summarizes web pages using Vercel AI Gateway",
   "type": "module",
   "scripts": {

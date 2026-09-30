@@ -6,6 +6,7 @@ import {
   type LanguageModelUsage,
 } from "ai";
 import { z } from "zod";
+import type { SummaryDiagnosticEvent } from "./summary-diagnostics";
 
 // Structured shape the model fills in — replaces the old delimiter parsing.
 const summaryOutputSchema = z.object({
@@ -197,6 +198,7 @@ export async function streamSummary({
   providerOptions,
   maxIncompleteRetries = 1,
   onPartial = () => {},
+  onDiagnostic = () => {},
 }: {
   model: LanguageModel;
   system: string;
@@ -207,16 +209,31 @@ export async function streamSummary({
   providerOptions?: Parameters<typeof streamObject>[0]["providerOptions"];
   maxIncompleteRetries?: number;
   onPartial?: (partial: Summary) => void;
+  onDiagnostic?: (event: SummaryDiagnosticEvent) => void | Promise<void>;
 }): Promise<SummaryResult> {
   let totalUsage: SummaryUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   let totalCostUsd: number | null = 0;
   let outputTokenBudget = maxOutputTokens;
+  // Diagnostics are best-effort and must never break summary generation.
+  const emit = async (event: SummaryDiagnosticEvent) => {
+    try { await onDiagnostic(event); }
+    catch { console.warn("[Page Summarizer] Unable to save summary diagnostics."); }
+  };
 
   for (let attempt = 0; attempt <= maxIncompleteRetries; attempt++) {
     const retryInstruction =
       attempt === 0
         ? ""
         : "\n\nThe previous response was invalid or incomplete. Start over and return a single valid JSON object with string fields tldr and summary and an array of strings in tags. Escape quotation marks, backslashes, and newlines inside JSON strings. Do not wrap the JSON in Markdown fences or add text outside the object. Keep the summary concise, finish every sentence, and close every Markdown marker in both prose fields before returning tags.";
+    const startedAt = Date.now();
+    const attemptContext = {
+      attempt: attempt + 1,
+      inputCharacters: prompt.length,
+      systemCharacters: system.length + retryInstruction.length,
+      maxOutputTokens: outputTokenBudget,
+      reasoning,
+    };
+    await emit({ event: "attempt-started", ...attemptContext });
     const { fullStream, object, usage, finishReason, providerMetadata } = streamObject({
       model,
       schema: summaryOutputSchema,
@@ -243,13 +260,26 @@ export async function streamSummary({
 
     // partialObjectStream suppresses error events and can leave `object`
     // pending after authentication/network failures. Consume errors explicitly.
-    for await (const part of fullStream) {
-      if (part.type === "error") {
-        throw part.error;
+    let responseText = "";
+    let responseId: string | undefined;
+    let responseModel: string | undefined;
+    try {
+      for await (const part of fullStream) {
+        if (part.type === "error") {
+          throw part.error;
+        }
+        if (part.type === "text-delta") responseText += part.textDelta;
+        if (part.type === "finish") {
+          responseId = part.response.id;
+          responseModel = part.response.modelId;
+        }
+        if (part.type === "object") {
+          onPartial(normalizePartial(part.object));
+        }
       }
-      if (part.type === "object") {
-        onPartial(normalizePartial(part.object));
-      }
+    } catch (error) {
+      await emit({ event: "attempt-failed", ...attemptContext, durationMs: Date.now() - startedAt, responseText, responseId, responseModel, error, willRetry: false });
+      throw error;
     }
 
     let final: Summary | undefined;
@@ -257,7 +287,10 @@ export async function streamSummary({
     try {
       final = await object;
     } catch (error) {
-      if (!NoObjectGeneratedError.isInstance(error)) throw error;
+      if (!NoObjectGeneratedError.isInstance(error)) {
+        await emit({ event: "attempt-failed", ...attemptContext, durationMs: Date.now() - startedAt, responseText, responseId, responseModel, error, willRetry: false });
+        throw error;
+      }
       // Parsing/schema failures reject `object` before our prose checks. The
       // SDK has already resolved usage and metadata for these finished requests.
       outputError = error;
@@ -270,8 +303,18 @@ export async function streamSummary({
     const cost = gatewayCostUsd((await providerMetadata)?.gateway?.cost);
     totalCostUsd = totalCostUsd !== null && cost !== null ? totalCostUsd + cost : null;
     const validation = summarySchema.safeParse(final);
+    const finishedContext = { ...attemptContext, durationMs: Date.now() - startedAt, responseId, responseModel, finishReason: finalFinishReason, usage: finalUsage, costUsd: cost };
 
     if (!validation.success || finalFinishReason === "length") {
+      const error = outputError ?? new IncompleteSummaryError(finalFinishReason);
+      await emit({
+        event: "attempt-failed", ...finishedContext, error,
+        responseText: outputError?.text ?? responseText,
+        validationIssues: !outputError && !validation.success
+          ? validation.error.issues.map((issue) => ({ path: issue.path.map(String).join("."), message: issue.message }))
+          : undefined,
+        willRetry: attempt < maxIncompleteRetries,
+      });
       if (attempt < maxIncompleteRetries) {
         if (finalFinishReason === "length") {
           outputTokenBudget = maxOutputTokens * 2;
@@ -279,9 +322,10 @@ export async function streamSummary({
         onPartial({ tldr: "", summary: "", tags: [] });
         continue;
       }
-      throw outputError ?? new IncompleteSummaryError(finalFinishReason);
+      throw error;
     }
 
+    await emit({ event: "attempt-succeeded", ...finishedContext });
     return {
       summary: validation.data,
       usage: totalUsage,

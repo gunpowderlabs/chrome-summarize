@@ -1,5 +1,6 @@
 import { summarizationConfig } from './config';
 import { summarizePage } from './lib/gateway-summary';
+import { createDiagnosticsStore } from './lib/summary-diagnostics';
 import {
   buildSystemPrompt,
   classifyError,
@@ -10,7 +11,26 @@ import {
 // chrome.storage.session is the single source of truth the side panel reads and
 // subscribes to. Every mutation is mirrored to storage via persistTabStates().
 const tabStates = new Map();
-let nextRequestId = 0;
+const diagnostics = createDiagnosticsStore(chrome.storage.local);
+const extensionVersion = chrome.runtime.getManifest().version;
+
+async function recordRequestDiagnostic(tabId, requestId, event, secrets = []) {
+  const state = tabStates.get(tabId);
+  const context = {
+    requestId, tabId, extensionVersion,
+    model: event.stage === 'youtube' ? 'yts' : summarizationConfig.model,
+    pageUrl: state?.diagnosticsRequestId === requestId ? state.url : undefined,
+  };
+  try {
+    if (event.error !== undefined && secrets.length === 0) {
+      const settings = await chrome.storage.sync.get(['gatewayApiKey', 'readwiseToken']);
+      secrets = [settings.gatewayApiKey?.trim() || '', settings.readwiseToken || ''];
+    }
+    await diagnostics.record(context, event, secrets);
+  } catch {
+    console.warn('[Page Summarizer] Unable to save summary diagnostics.');
+  }
+}
 
 // The tab/window the side panel was last opened for, captured from the user
 // gesture. This is the authoritative answer to "which tab is the panel showing"
@@ -86,8 +106,7 @@ function createLoadingState(tab = null) {
 }
 
 function createRequestId() {
-  nextRequestId += 1;
-  return `request-${nextRequestId}`;
+  return crypto.randomUUID();
 }
 
 function isCurrentRequest(tabId, requestId) {
@@ -206,12 +225,14 @@ async function startSummarization(tabId) {
     stage: 'extracting',
     message: 'Extracting page content...',
     startTime: Date.now(),
-    requestId: requestId
+    requestId: requestId,
+    diagnosticsRequestId: requestId
   });
+  await recordRequestDiagnostic(tabId, requestId, { event: 'request-started', stage: 'extraction' });
 
   try {
     const response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
-    handleExtractedContent(tabId, response, requestId);
+    await handleExtractedContent(tabId, response, requestId);
   } catch (err) {
     // Content script not loaded — inject it and retry
     try {
@@ -220,8 +241,9 @@ async function startSummarization(tabId) {
         files: ['content.js']
       });
       const response = await chrome.tabs.sendMessage(tabId, { action: 'extractContent' });
-      handleExtractedContent(tabId, response, requestId);
+      await handleExtractedContent(tabId, response, requestId);
     } catch (err2) {
+      await recordRequestDiagnostic(tabId, requestId, { event: 'request-failed', stage: 'extraction', error: err2 });
       updateTabStateForRequest(tabId, requestId, {
         phase: 'error',
         title: 'Cannot Access Page',
@@ -232,12 +254,13 @@ async function startSummarization(tabId) {
   }
 }
 
-function handleExtractedContent(tabId, response, requestId) {
+async function handleExtractedContent(tabId, response, requestId) {
   if (!isCurrentRequest(tabId, requestId)) {
     return;
   }
 
   if (!response) {
+    await recordRequestDiagnostic(tabId, requestId, { event: 'request-failed', stage: 'extraction', error: 'No response from content script.' });
     updateTabStateForRequest(tabId, requestId, {
       phase: 'error',
       title: 'Extraction Failed',
@@ -254,6 +277,7 @@ function handleExtractedContent(tabId, response, requestId) {
 
   if (response.isYouTube) {
     if (!response.videoId) {
+      await recordRequestDiagnostic(tabId, requestId, { event: 'request-failed', stage: 'extraction', error: 'Could not extract video ID from the current URL.' });
       updateTabStateForRequest(tabId, requestId, {
         phase: 'error',
         title: 'Invalid YouTube URL',
@@ -271,9 +295,10 @@ function handleExtractedContent(tabId, response, requestId) {
       return;
     }
 
-    handleYouTubeSummarization(tabId, response.url, response.videoId, response.title);
+    handleYouTubeSummarization(tabId, response.url, response.videoId, response.title, requestId);
   } else {
     if (!response.content || response.content.trim().length < 30) {
+      await recordRequestDiagnostic(tabId, requestId, { event: 'request-failed', stage: 'extraction', inputCharacters: response.content?.length ?? 0, error: 'Not enough content found on this page to summarize.' });
       updateTabStateForRequest(tabId, requestId, {
         phase: 'error',
         title: 'Insufficient Content',
@@ -307,7 +332,7 @@ async function handleSummarization(tabId, content, requestId) {
       streamSummaryUpdate(tabId, requestId, partial);
     };
 
-    const result = await summarizeWithGateway(content, onPartial);
+    const result = await summarizeWithGateway(content, onPartial, tabId, requestId);
     if (!isCurrentRequest(tabId, requestId)) {
       return;
     }
@@ -328,8 +353,9 @@ async function handleSummarization(tabId, content, requestId) {
     if (!isCurrentRequest(tabId, requestId)) {
       return;
     }
-    console.error('Error:', error);
     const { errorType, title, message } = classifyError(error);
+    console.error('[Page Summarizer] Summary failed. Request:', requestId);
+    await recordRequestDiagnostic(tabId, requestId, { event: 'request-failed', error: message });
     updateTabStateForRequest(tabId, requestId, {
       phase: 'error',
       title,
@@ -340,11 +366,12 @@ async function handleSummarization(tabId, content, requestId) {
   }
 }
 
-async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
+async function handleYouTubeSummarization(tabId, videoUrl, videoId, title, requestId) {
   try {
     const result = await summarizeYouTubeWithYTS(videoUrl, videoId, title, tabId);
     const startTime = tabStates.get(tabId)?.startTime;
-    updateTabState(tabId, {
+    await recordRequestDiagnostic(tabId, requestId, { event: 'request-succeeded', stage: 'youtube', durationMs: startTime ? Date.now() - startTime : undefined });
+    updateTabStateForRequest(tabId, requestId, {
       phase: 'summary',
       tldr: null,
       summary: result.summary,
@@ -356,8 +383,9 @@ async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
       durationMs: startTime ? Date.now() - startTime : null
     });
   } catch (error) {
-    console.error('YouTube summarization error:', error);
-    updateTabState(tabId, {
+    console.error('[Page Summarizer] YouTube summary failed. Request:', requestId);
+    await recordRequestDiagnostic(tabId, requestId, { event: 'request-failed', stage: 'youtube', error });
+    updateTabStateForRequest(tabId, requestId, {
       phase: 'error',
       title: 'YouTube Summarization Failed',
       message: error.message,
@@ -369,6 +397,19 @@ async function handleYouTubeSummarization(tabId, videoUrl, videoId, title) {
 // --- Message Listener ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'getSummaryDiagnostics' || message.action === 'clearSummaryDiagnostics') {
+    // Content scripts cannot retrieve diagnostic responses or clear the history.
+    if (!sender.url?.startsWith(chrome.runtime.getURL(''))) {
+      sendResponse({ ok: false, error: 'Diagnostics are available only in extension pages.' });
+      return false;
+    }
+    const operation = message.action === 'clearSummaryDiagnostics'
+      ? diagnostics.clear().then(() => ({ ok: true }))
+      : diagnostics.read(extensionVersion, typeof message.requestId === 'string' ? message.requestId : undefined)
+          .then(report => ({ ok: true, report }));
+    operation.then(sendResponse).catch(() => sendResponse({ ok: false, error: 'Unable to access saved diagnostics.' }));
+    return true;
+  }
   if (message.action === 'panelReady') {
     // Side panel just loaded — tell it which tab it owns and that tab's state.
     (async () => {
@@ -492,7 +533,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // Stream a structured summary via the AI SDK. onPartial receives progressively
 // more complete { tldr, summary, tags } objects; the resolved value is the
 // fully validated object.
-async function summarizeWithGateway(content, onPartial = () => {}) {
+async function summarizeWithGateway(content, onPartial = () => {}, tabId, requestId) {
   const result = await chrome.storage.sync.get(['gatewayApiKey', 'enableReadwise', 'readwiseToken']);
   if (!result.gatewayApiKey?.trim()) {
     throw Object.assign(new Error('Vercel AI Gateway API key not set.'), { statusCode: 401 });
@@ -518,7 +559,8 @@ async function summarizeWithGateway(content, onPartial = () => {}) {
     apiKey: result.gatewayApiKey.trim(),
     content,
     system: buildSystemPrompt(basePrompt, availableTags),
-    onPartial
+    onPartial,
+    onDiagnostic: (event) => recordRequestDiagnostic(tabId, requestId, event, [result.gatewayApiKey.trim(), result.readwiseToken || ''])
   });
 }
 

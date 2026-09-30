@@ -38,3 +38,36 @@ test("options requires a separate Gateway key and preserves existing Readwise se
   ready();
   expect(elements.gatewayApiKey.value).toBe("gateway-key");
 });
+
+test("options exports the diagnostic report as JSON and clears it through the worker", async () => {
+  const callbacks: Record<string, () => Promise<void>> = {};
+  const elements: Record<string, any> = {
+    save: { addEventListener() {} }, diagnosticsCount: {}, diagnosticsStatus: { style: {} },
+    exportDiagnostics: { addEventListener: (_event: string, callback: () => Promise<void>) => { callbacks.export = callback; } },
+    clearDiagnostics: { addEventListener: (_event: string, callback: () => Promise<void>) => { callbacks.clear = callback; } },
+  };
+  const report = { schemaVersion: 1, records: [{ requestId: "request-1", responseText: "malformed JSON" }] };
+  let downloadedBlob: Blob | undefined;
+  const link = { href: "", download: "", click() { clicked = true; } };
+  let clicked = false;
+  const messages: string[] = [];
+  runInNewContext(readFileSync(new URL("../options.js", import.meta.url), "utf8"), {
+    document: { getElementById: (id: string) => elements[id], addEventListener() {}, createElement: () => link },
+    chrome: { runtime: { sendMessage: async (message: { action: string }) => {
+      messages.push(message.action);
+      if (message.action === "clearSummaryDiagnostics") { report.records = []; return { ok: true }; }
+      return { ok: true, report };
+    } } },
+    Blob, URL: { createObjectURL: (blob: Blob) => { downloadedBlob = blob; return "blob:test"; }, revokeObjectURL() {} },
+    setTimeout() {},
+  });
+  await callbacks.export?.();
+  expect(clicked).toBe(true);
+  expect(link.download).toMatch(/^page-summarizer-diagnostics-.*\.json$/);
+  expect(JSON.parse(await downloadedBlob!.text())).toEqual(report);
+  expect(elements.diagnosticsStatus.textContent).toContain("exported");
+  await callbacks.clear?.();
+  expect(messages).toEqual(["getSummaryDiagnostics", "clearSummaryDiagnostics", "getSummaryDiagnostics"]);
+  expect(elements.diagnosticsCount.textContent).toContain("0 saved events");
+  expect(elements.diagnosticsStatus.textContent).toBe("Saved diagnostics cleared.");
+});

@@ -1,8 +1,9 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { NoObjectGeneratedError } from "ai";
 import { summarizationConfig } from "../config";
 import { summarizePage } from "./gateway-summary";
 import { classifyError, type Summary } from "./summarize";
+import { createDiagnosticsStore, type SummaryDiagnosticEvent } from "./summary-diagnostics";
 
 test("summarizePage sends configured structured requests through the real Gateway adapter", async () => {
   const expected = {
@@ -178,4 +179,62 @@ test("Gateway network failures are not retried as malformed output", async () =>
   expect(error).not.toBeNull();
   expect(NoObjectGeneratedError.isInstance(error)).toBe(false);
   expect(requests).toBe(1);
+});
+
+test("Gateway diagnostics retain a malformed response even when the retry succeeds", async () => {
+  const malformed = '{"tldr":"Overview.","summary":"Say "hello" today.","tags":[]}';
+  const events: SummaryDiagnosticEvent[] = [];
+  let requests = 0;
+  await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    onDiagnostic: (event) => { events.push(event); },
+    fetch: async () => gatewayTextResponse(requests++ === 0
+      ? malformed
+      : JSON.stringify({ tldr: "Overview.", summary: "Summary.", tags: [] })),
+  });
+  expect(events.map((event) => event.event)).toEqual([
+    "attempt-started", "attempt-failed", "attempt-started", "attempt-succeeded",
+  ]);
+  const failure = events[1];
+  expect(failure?.responseText).toBe(malformed);
+  expect(failure?.finishReason).toBe("stop");
+  expect(failure?.attempt).toBe(1);
+  expect(failure?.willRetry).toBe(true);
+  expect(failure?.usage?.totalTokens).toBe(150);
+  expect(failure?.responseId).toBeString();
+  expect(NoObjectGeneratedError.isInstance(failure?.error)).toBe(true);
+  expect(events[3]?.responseText).toBeUndefined();
+});
+
+test("diagnostics storage failures cannot turn a valid Gateway summary into an error", async () => {
+  const warning = spyOn(console, "warn").mockImplementation(() => {});
+  const expected = { tldr: "Overview.", summary: "Summary.", tags: [] };
+  const store = createDiagnosticsStore({
+    async setAccessLevel() {}, async get() { return {}; },
+    async set() { throw new Error("Storage quota exceeded"); }, async remove() {},
+  });
+  try {
+    const result = await summarizePage({
+      apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+      onDiagnostic: (event) => store.record({ requestId: "request", tabId: 7, extensionVersion: "test" }, event),
+      fetch: async () => gatewayTextResponse(JSON.stringify(expected)),
+    });
+    expect(result.summary).toEqual(expected);
+    expect(warning).toHaveBeenCalledTimes(2);
+    expect(warning).toHaveBeenCalledWith("[Page Summarizer] Unable to save summary diagnostics.");
+  } finally {
+    warning.mockRestore();
+  }
+});
+
+test("Gateway error diagnostics preserve HTTP status and error causes without waiting for a finish", async () => {
+  const events: SummaryDiagnosticEvent[] = [];
+  await summarizePage({
+    apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
+    onDiagnostic: (event) => { events.push(event); },
+    fetch: async () => Response.json({ error: { message: "Invalid API key" } }, { status: 401 }),
+  }).catch(() => {});
+  expect(events.map((event) => event.event)).toEqual(["attempt-started", "attempt-failed"]);
+  expect(classifyError(events[1]?.error).errorType).toBe("apiKey");
+  expect(events[1]?.willRetry).toBe(false);
 });

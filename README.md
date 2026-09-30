@@ -81,6 +81,24 @@ The summary footer displays the model and Gateway-reported request cost,
 including any incomplete-summary retry. If Gateway omits cost metadata, the
 footer omits the cost rather than estimating it with another model's rates.
 
+## Diagnostics
+
+Recent summary attempts and extraction/YouTube failures are saved locally. On an
+error, click **Copy diagnostics** to copy that request's JSON report. To inspect
+failures that recovered on retry, open extension **Settings → Export diagnostics**
+and share the downloaded `page-summarizer-diagnostics-<timestamp>.json` file.
+
+Logs include the model, extension version, attempt number, settings, finish reason,
+timing, token usage, errors and causes, validation issues, and the failed response.
+Successful responses and the full source page/system prompt are not recorded.
+Saved API keys and tokens are redacted, and page URLs omit query strings and
+fragments. Failed responses can still contain text from the page.
+
+The history survives browser restarts and keeps up to 50 events within 1 MB.
+Failed response text is limited to 32,768 characters; longer text retains its
+beginning and end and is marked as truncated. **Clear diagnostics** in Settings
+removes the history without changing API keys or other settings.
+
 ## Customizing the Summary
 
 Edit `prompt.txt` to change the summary style, then rebuild and reload. The model

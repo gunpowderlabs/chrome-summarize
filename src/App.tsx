@@ -39,6 +39,7 @@ export function App() {
           title={panelState.title}
           message={panelState.message}
           errorType={panelState.errorType}
+          diagnosticsRequestId={panelState.diagnosticsRequestId}
           onRetry={retry}
         />
       );
