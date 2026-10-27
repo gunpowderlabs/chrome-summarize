@@ -133,7 +133,7 @@ function streamSummaryUpdate(tabId, requestId, partial) {
     ...current,
     phase: 'summary',
     tldr: partial.tldr || null,
-    summary: partial.summary || '',
+    summary: { bullets: partial.bullets, steps: partial.steps, applicationNote: partial.applicationNote },
     tags: partial.tags || [],
     model: summarizationConfig.model,
     metadata: null,
@@ -340,7 +340,7 @@ async function handleSummarization(tabId, content, requestId) {
     updateTabStateForRequest(tabId, requestId, {
       phase: 'summary',
       tldr: result.summary.tldr,
-      summary: result.summary.summary,
+      summary: { bullets: result.summary.bullets, steps: result.summary.steps, applicationNote: result.summary.applicationNote },
       tags: result.summary.tags,
       model: result.model,
       metadata: null,
@@ -531,8 +531,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // --- Vercel AI Gateway ---
 
 // Stream a structured summary via the AI SDK. onPartial receives progressively
-// more complete { tldr, summary, tags } objects; the resolved value is the
-// fully validated object.
+// more complete { tldr, bullets, steps, applicationNote, tags } objects;
+// the resolved value is the fully validated object.
 async function summarizeWithGateway(content, onPartial = () => {}, tabId, requestId) {
   const result = await chrome.storage.sync.get(['gatewayApiKey', 'enableReadwise', 'readwiseToken']);
   if (!result.gatewayApiKey?.trim()) {

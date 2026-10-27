@@ -7,53 +7,54 @@ import {
 } from "ai";
 import { z } from "zod";
 import type { SummaryDiagnosticEvent } from "./summary-diagnostics";
-import { normalizeSummaryMarkdown } from "./summary-markdown";
 
-// Structured shape the model fills in — replaces the old delimiter parsing.
+// Block boundaries belong to the schema; the model supplies inline content only.
+const inlineDescription = "Use complete sentences with optional **bold** phrases only. No bullet markers, numbering, headings, HTML, or other Markdown.";
 const summaryOutputSchema = z.object({
-  tldr: z
-    .string()
-    .describe(
-      "A self-contained 1-2 sentence overview, 60 words max. For articles, state what the author argues and why it matters. For product pages, name the product, what it does, who it is for, and the main problem it addresses. Plain prose, no heading or label. Finish every sentence and close every Markdown marker."
-    ),
-  summary: z
-    .string()
-    .describe(
-      "Start with a scannable 3-6 item Markdown bullet list that expands on the TL;DR. For articles, include supporting arguments and evidence. For product pages, prioritize problems solved, relevant features and limits, and a pricing bullet. Preserve stated prices, currencies, plans, billing terms, and free-plan or trial distinctions. Report contact-sales pricing when stated; otherwise, if no price is supplied, say 'Pricing is not stated on this page.' Never guess pricing or use remembered prices. Attribute unverified claims to the seller. Keep each bullet to 1-2 short sentences and bold at most one short phrase per bullet. Do not repeat the TL;DR or add a heading before the bullets. Then add the heading '## Apply this to your life' and a numbered implementation guide, usually 3-6 concrete steps in the order the reader should take them. Address the reader as 'you' and ground each suggested action in the source without inventing personal details or claims. For product pages, help the reader assess fit and try a relevant use case using only capabilities and instructions on the page, without assuming a purchase. If no useful personal application exists, briefly explain why under the heading instead of inventing steps. The guide is separate from the TL;DR and summary bullets' word limit. Finish every sentence and close every Markdown marker."
-    ),
-  tags: z
-    .array(z.string())
-    .describe(
-      "3-5 concise topical tags (1-2 words each) mixing general categories and specific topics."
-    ),
+  tldr: z.string().describe(
+    "A self-contained 1-2 sentence overview, 60 words max. For articles, state what the author argues and why it matters. For product pages, name the product, what it does, who it is for, and the main problem it addresses. " + inlineDescription
+  ),
+  bullets: z.array(z.string()).min(1).describe(
+    "Usually 3-6 summary points, fewer for simple sources, one point per array item. Expand on the TL;DR without repeating it. For articles, include supporting arguments and evidence. For products, prioritize problems solved, features, limits, and pricing. Preserve stated prices, currencies, plans, billing terms, and free-plan or trial distinctions. Report contact-sales pricing when stated; if no price is supplied, say 'Pricing is not stated on this page.' Never guess prices. Attribute unverified claims to the seller. Each item is 1-2 short sentences with at most one short bold phrase. " + inlineDescription
+  ),
+  steps: z.array(z.string()).describe(
+    "Usually 3-6 concrete application steps in order, one action per array item. Address the reader as 'you'. Ground each action in the source without inventing personal details or claims. For products, help assess fit and try a relevant use case using only capabilities and instructions on the page, without assuming a purchase. Use an empty array if there is no useful personal application, and explain why in applicationNote. Otherwise applicationNote must be null. " + inlineDescription
+  ),
+  applicationNote: z.string().nullable().describe(
+    "A brief explanation when there is no useful personal application and steps is empty. Must be null when steps are provided. " + inlineDescription
+  ),
+  tags: z.array(z.string()).describe(
+    "3-5 concise topical tags (1-2 words each) mixing general categories and specific topics."
+  ),
 });
 
-function hasCompleteProseAndMarkdown(text: string): boolean {
+function hasCompleteInlineProse(text: string): boolean {
   const trimmed = text.trim();
-  if (!trimmed) {
-    return false;
-  }
-
+  if (!trimmed) return false;
   const unescaped = trimmed.replace(/\\./g, "");
-  const boldMarkers = unescaped.match(/\*\*/g)?.length ?? 0;
-  const backticks = unescaped.match(/`/g)?.length ?? 0;
-  if (boldMarkers % 2 !== 0 || backticks % 2 !== 0) {
-    return false;
+  for (const marker of [/\*\*/g, /__/g]) {
+    if ((unescaped.match(marker)?.length ?? 0) % 2 !== 0) return false;
   }
-
-  const withoutClosingMarkdown = trimmed.replace(/(?:\*\*|__|~~|`+|\]|\))+\s*$/g, "").trim();
-  return /[.!?…]["'’”]?$/.test(withoutClosingMarkdown);
+  // Each array item is inline text, not a model-authored list or heading.
+  if (/^\s*(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>\s|```)/m.test(trimmed)) return false;
+  const withoutClosingBold = trimmed.replace(/(?:\*\*|__)+\s*$/g, "").trim();
+  return /[.!?…]["'’”]?$/.test(withoutClosingBold);
 }
 
 export const summarySchema = summaryOutputSchema.superRefine((value, context) => {
-  for (const field of ["tldr", "summary"] as const) {
-    if (!hasCompleteProseAndMarkdown(value[field])) {
-      context.addIssue({
-        code: "custom",
-        message: "Must end with complete prose and balanced Markdown.",
-        path: [field],
-      });
+  const fields: { text: string; path: (string | number)[] }[] = [
+    { text: value.tldr, path: ["tldr"] },
+    ...value.bullets.map((text, index) => ({ text, path: ["bullets", index] })),
+    ...value.steps.map((text, index) => ({ text, path: ["steps", index] })),
+    ...(value.applicationNote === null ? [] : [{ text: value.applicationNote, path: ["applicationNote"] }]),
+  ];
+  for (const { text, path } of fields) {
+    if (!hasCompleteInlineProse(text)) {
+      context.addIssue({ code: "custom", message: "Must contain complete inline prose with balanced bold and no list markers or headings.", path });
     }
+  }
+  if ((value.steps.length > 0) !== (value.applicationNote === null)) {
+    context.addIssue({ code: "custom", message: "Provide steps with a null applicationNote, or an explanation with empty steps.", path: ["applicationNote"] });
   }
 });
 
@@ -101,19 +102,24 @@ function gatewayCostUsd(cost: unknown): number | null {
 /**
  * Coerce a partial object from the stream into a stable shape. The streamed
  * object is not validated, so fields may be missing or — for the in-progress
- * tag array — contain non-string entries.
+ * arrays — contain non-string entries.
  */
 export function normalizePartial(partial: {
   tldr?: unknown;
-  summary?: unknown;
+  bullets?: unknown;
+  steps?: unknown;
+  applicationNote?: unknown;
   tags?: unknown;
 }): Summary {
+  const strings = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
   return {
     tldr: typeof partial?.tldr === "string" ? partial.tldr : "",
-    summary: typeof partial?.summary === "string" ? normalizeSummaryMarkdown(partial.summary) : "",
-    tags: Array.isArray(partial?.tags)
-      ? partial.tags.filter((tag): tag is string => typeof tag === "string")
-      : [],
+    bullets: strings(partial?.bullets),
+    steps: strings(partial?.steps),
+    applicationNote: typeof partial?.applicationNote === "string" ? partial.applicationNote : null,
+    tags: strings(partial?.tags),
   };
 }
 
@@ -225,7 +231,7 @@ export async function streamSummary({
     const retryInstruction =
       attempt === 0
         ? ""
-        : "\n\nThe previous response was invalid or incomplete. Start over and return a single valid JSON object with string fields tldr and summary and an array of strings in tags. Escape quotation marks, backslashes, and newlines inside JSON strings. Do not wrap the JSON in Markdown fences or add text outside the object. Keep the summary concise, finish every sentence, and close every Markdown marker in both prose fields before returning tags.";
+        : "\n\nThe previous response was invalid or incomplete. Start over and return a single valid JSON object with a tldr string, arrays of strings in bullets, steps, and tags, and an applicationNote string or null. Put each bullet and step in its own array item, without list markers, numbering, or headings. Provide steps with applicationNote null, or empty steps with an explanation in applicationNote. Escape quotation marks, backslashes, and newlines inside JSON strings. Do not wrap the JSON in Markdown fences or add text outside the object. Keep the summary concise, finish every sentence, and close every inline bold marker in every prose item before returning tags.";
     const startedAt = Date.now();
     const attemptContext = {
       attempt: attempt + 1,
@@ -320,7 +326,7 @@ export async function streamSummary({
         if (finalFinishReason === "length") {
           outputTokenBudget = maxOutputTokens * 2;
         }
-        onPartial({ tldr: "", summary: "", tags: [] });
+        onPartial(normalizePartial({}));
         continue;
       }
       throw error;
@@ -328,7 +334,7 @@ export async function streamSummary({
 
     await emit({ event: "attempt-succeeded", ...finishedContext });
     return {
-      summary: { ...validation.data, summary: normalizeSummaryMarkdown(validation.data.summary) },
+      summary: validation.data,
       usage: totalUsage,
       costUsd: totalCostUsd,
     };

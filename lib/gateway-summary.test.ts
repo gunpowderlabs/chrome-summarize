@@ -5,10 +5,16 @@ import { summarizePage } from "./gateway-summary";
 import { classifyError, type Summary } from "./summarize";
 import { createDiagnosticsStore, type SummaryDiagnosticEvent } from "./summary-diagnostics";
 
+const completeSummary: Summary = {
+  tldr: "Overview.", bullets: ["Summary."], steps: ["Try it."], applicationNote: null, tags: [],
+};
+
 test("summarizePage sends configured structured requests through the real Gateway adapter", async () => {
   const expected = {
     tldr: "Small experiments help you test a new habit.",
-    summary: "- The author recommends trying one change before committing to it.\n\n## Apply this to your life\n\n1. Pick one habit you want to try today and write down what you expect to change.\n2. After trying it, compare the result with your expectation and decide whether to repeat it.",
+    bullets: ["The author recommends trying one change before committing to it."],
+    steps: ["Pick one habit you want to try today and write down what you expect to change.", "After trying it, compare the result with your expectation and decide whether to repeat it."],
+    applicationNote: null,
     tags: ["habits"],
   };
   const json = JSON.stringify(expected);
@@ -34,7 +40,9 @@ test("summarizePage sends configured structured requests through the real Gatewa
       expect(body.prompt[0].content).toBe("Summarize faithfully.");
       expect(body.prompt[1].content[0].text.length).toBe(100_000);
       expect(body.responseFormat.type).toBe("json");
-      expect(body.responseFormat.schema.required).toEqual(["tldr", "summary", "tags"]);
+      expect(body.responseFormat.schema.properties.bullets.type).toBe("array");
+      expect(body.responseFormat.schema.properties.steps.items.type).toBe("string");
+      expect(body.responseFormat.schema.required).toEqual(["tldr", "bullets", "steps", "applicationNote", "tags"]);
 
       const chunks = [
         { type: "stream-start", warnings: [] },
@@ -96,12 +104,15 @@ function gatewayTextResponse(text: string, finishReason = "stop", cost: unknown 
 }
 
 test.each([
-  ["malformed JSON", '{"tldr":"Overview.","summary":"- Say "hello" today.","tags":[]}', "stop"],
-  ["schema mismatch", '{"tldr":"Overview.","summary":42,"tags":[]}', "stop"],
-  ["truncated JSON", '{"tldr":"Overview.","summary":"- Say hello', "length"],
+  ["malformed JSON", '{"tldr":"Overview.","bullets":["Say "hello" today."],"tags":[]}', "stop"],
+  ["schema mismatch", JSON.stringify({ ...completeSummary, bullets: 42 }), "stop"],
+  ["legacy summary shape", '{"tldr":"Overview.","summary":"Summary.","tags":[]}', "stop"],
+  ["missing application", JSON.stringify({ ...completeSummary, steps: [] }), "stop"],
+  ["unfinished array item", JSON.stringify({ ...completeSummary, steps: ["Try it.", "Then"] }), "stop"],
+  ["truncated JSON", '{"tldr":"Overview.","bullets":["Say hello', "length"],
   ["empty response", "", "stop"],
 ])("Gateway %s is retried instead of surfacing a parse error", async (_, text, finishReason) => {
-  const expected = { tldr: "Overview.", summary: "- Say hello today.", tags: [] };
+  const expected = { ...completeSummary, bullets: ["Say hello today."] };
   const partials: Summary[] = [];
   let requests = 0;
   const result = await summarizePage({
@@ -113,6 +124,7 @@ test.each([
         return gatewayTextResponse(text, finishReason);
       }
       expect(body.prompt[0].content).toContain("single valid JSON object");
+      expect(body.prompt[0].content).toContain("arrays of strings in bullets, steps, and tags");
       expect(body.maxOutputTokens).toBe(summarizationConfig.maxOutputTokens * (finishReason === "length" ? 2 : 1));
       return gatewayTextResponse(JSON.stringify(expected));
     },
@@ -121,7 +133,7 @@ test.each([
   expect(result.summary).toEqual(expected);
   expect(result.usage).toEqual({ inputTokens: 200, outputTokens: 100, totalTokens: 300 });
   expect(result.costUsd).toBe(0.00031);
-  expect(partials).toContainEqual({ tldr: "", summary: "", tags: [] });
+  expect(partials).toContainEqual({ tldr: "", bullets: [], steps: [], applicationNote: null, tags: [] });
 });
 
 test.each([
@@ -147,7 +159,7 @@ test("Gateway retries keep cost unknown when malformed output has no cost", asyn
     apiKey: "test-gateway-key", system: "Summarize.", content: "Page text.",
     fetch: async () => requests++ === 0
       ? gatewayTextResponse("invalid JSON", "stop", null)
-      : gatewayTextResponse(JSON.stringify({ tldr: "Overview.", summary: "Summary.", tags: [] })),
+      : gatewayTextResponse(JSON.stringify(completeSummary)),
   });
   expect(requests).toBe(2);
   expect(result.costUsd).toBeNull();
@@ -182,7 +194,7 @@ test("Gateway network failures are not retried as malformed output", async () =>
 });
 
 test("Gateway diagnostics retain a malformed response even when the retry succeeds", async () => {
-  const malformed = '{"tldr":"Overview.","summary":"Say "hello" today.","tags":[]}';
+  const malformed = '{"tldr":"Overview.","bullets":["Say "hello" today."],"tags":[]}';
   const events: SummaryDiagnosticEvent[] = [];
   let requests = 0;
   await summarizePage({
@@ -190,7 +202,7 @@ test("Gateway diagnostics retain a malformed response even when the retry succee
     onDiagnostic: (event) => { events.push(event); },
     fetch: async () => gatewayTextResponse(requests++ === 0
       ? malformed
-      : JSON.stringify({ tldr: "Overview.", summary: "Summary.", tags: [] })),
+      : JSON.stringify(completeSummary)),
   });
   expect(events.map((event) => event.event)).toEqual([
     "attempt-started", "attempt-failed", "attempt-started", "attempt-succeeded",
@@ -208,7 +220,7 @@ test("Gateway diagnostics retain a malformed response even when the retry succee
 
 test("diagnostics storage failures cannot turn a valid Gateway summary into an error", async () => {
   const warning = spyOn(console, "warn").mockImplementation(() => {});
-  const expected = { tldr: "Overview.", summary: "Summary.", tags: [] };
+  const expected = completeSummary;
   const store = createDiagnosticsStore({
     async setAccessLevel() {}, async get() { return {}; },
     async set() { throw new Error("Storage quota exceeded"); }, async remove() {},

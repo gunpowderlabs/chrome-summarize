@@ -85,7 +85,7 @@ bun run install-native-host
 - To inspect manually in the extension service-worker console: `await chrome.storage.local.get('summaryDiagnostics')`. Settings → **Clear diagnostics** removes only the diagnostic history. Keep logging best-effort so a storage failure cannot break summarization, and do not add per-token storage writes.
 
 ### API Integration
-- Summarization uses the **Vercel AI SDK** (`ai`, including its built-in Gateway provider) via `streamObject` for structured, streaming output — `{ tldr, summary, tags }` validated by a Zod schema in `lib/summarize.ts`
+- Summarization uses the **Vercel AI SDK** (`ai`, including its built-in Gateway provider) via `streamObject` for structured, streaming output — `{ tldr, bullets, steps, applicationNote, tags }` validated by a Zod schema in `lib/summarize.ts`
 - Calls Vercel AI Gateway directly from the service worker using `createGateway` and the saved `gatewayApiKey`
 - `lib/gateway-summary.ts` applies `config.ts`; Gateway response metadata supplies request costs
 - Default model: `google/gemini-3.5-flash-lite`, with minimal reasoning (editable in `config.ts`)

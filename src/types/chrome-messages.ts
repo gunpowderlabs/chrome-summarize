@@ -1,3 +1,5 @@
+import type { StoredSummary } from "../../lib/summary-content";
+
 export type ProgressStage =
   | "extracting"
   | "processing"
@@ -34,7 +36,7 @@ export interface YouTubeMetadata {
 export interface SummaryState {
   phase: "summary";
   tldr: string | null;
-  summary: string;
+  summary: StoredSummary;
   tags: string[];
   model: string | null;
   metadata: YouTubeMetadata | null;

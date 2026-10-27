@@ -102,7 +102,10 @@ removes the history without changing API keys or other settings.
 ## Customizing the Summary
 
 Edit `prompt.txt` to change the summary style, then rebuild and reload. The model
-returns a structured TL;DR, Markdown bullet summary, and topical tags.
+returns a TL;DR, separate arrays of summary bullets and application steps, an
+explanation when no useful application exists, and topical tags. The panel renders
+lists and headings directly and supports inline bold within each item. Existing
+cached summaries and YouTube summaries retain their Markdown rendering.
 
 ## API Key Configuration
 

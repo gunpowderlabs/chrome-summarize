@@ -7,14 +7,14 @@ import type { ReadwiseState } from "@/hooks/use-chrome-messages";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Copy, BookOpen } from "lucide-react";
-import { Streamdown } from "streamdown";
+import { SummaryBody, SummaryOverview } from "./SummaryContent";
 import { ApplyPrompt } from "./ApplyPrompt";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { normalizeSummaryMarkdown } from "../../lib/summary-markdown";
+import { plainInlineText, summaryToText, summaryWordCount, type StoredSummary } from "../../lib/summary-content";
 
 interface SummaryStateProps {
   tldr: string | null;
-  summary: string;
+  summary: StoredSummary;
   tags: string[];
   model: string | null;
   metadata: YouTubeMetadata | null;
@@ -27,20 +27,6 @@ interface SummaryStateProps {
   onRequestReadwiseTags: () => void;
   onSaveToReadwise: (url: string, title: string, summary: string, tags: string[]) => void;
   onDismissReadwise: () => void;
-}
-
-function SummaryMarkdown({ children, streaming }: { children: string; streaming: boolean }) {
-  return (
-    <Streamdown
-      className="space-y-0"
-      controls={false}
-      isAnimating={streaming}
-      mode={streaming ? "streaming" : "static"}
-      skipHtml
-    >
-      {children}
-    </Streamdown>
-  );
 }
 
 function formatCost(costUsd: number | null | undefined): string | null {
@@ -76,14 +62,12 @@ export function SummaryState({
   const [showReadwise, setShowReadwise] = useState(false);
   const [readwiseEnabled, setReadwiseEnabled] = useState(false);
 
-  // Also repair summaries already cached by an older extension version.
   const tldrText = tldr;
-  const summaryText = normalizeSummaryMarkdown(summary);
+  const summaryText = summaryToText(summary);
   const suggestedTags = tags;
   const showMetadata = Boolean(metadata?.duration || metadata?.channel || metadata?.hasTranscript);
 
-  const fullText = tldrText ? `${tldrText} ${summaryText}` : summaryText;
-  const wordCount = fullText.trim().split(/\s+/).filter((w) => w.length > 0).length;
+  const wordCount = summaryWordCount(tldrText, summary);
   const costLabel = formatCost(costUsd);
 
   // Check if Readwise is enabled
@@ -95,7 +79,7 @@ export function SummaryState({
 
   const handleCopy = useCallback(() => {
     const copySource = tldrText ?? summaryText;
-    const cleanSummary = copySource.replace(/\*\*(.*?)\*\*/g, "$1").trim();
+    const cleanSummary = plainInlineText(copySource).trim();
     const snippet = url ? `${url}\nTL;DR: ${cleanSummary}` : `TL;DR: ${cleanSummary}`;
     navigator.clipboard
       .writeText(snippet)
@@ -115,8 +99,7 @@ export function SummaryState({
   };
 
   const handleSaveToReadwise = (selectedTags: string[]) => {
-    const cleanSummary = summaryText.replace(/\*\*(.*?)\*\*/g, "$1");
-    onSaveToReadwise(url ?? "", pageTitle ?? "", cleanSummary, selectedTags);
+    onSaveToReadwise(url ?? "", pageTitle ?? "", summaryText, selectedTags);
   };
 
   const handleDismissReadwise = () => {
@@ -135,17 +118,13 @@ export function SummaryState({
           {tldrText && (
             <>
               <div className="typeset typeset-docs">
-                <SummaryMarkdown streaming={streaming}>
-                  {tldrText}
-                </SummaryMarkdown>
+                <SummaryOverview text={tldrText} legacy={typeof summary === "string"} streaming={streaming} />
               </div>
               <Separator className="my-5" />
             </>
           )}
           <div className="typeset typeset-docs">
-            <SummaryMarkdown streaming={streaming}>
-              {summaryText}
-            </SummaryMarkdown>
+            <SummaryBody summary={summary} streaming={streaming} />
             {showMetadata && metadata && (
               <p>
                 {metadata.duration && (

@@ -11,13 +11,19 @@ import {
   type Summary,
 } from "./summarize";
 
+const completeSummary: Summary = {
+  tldr: "Overview.", bullets: ["Summary."], steps: ["Try it."], applicationNote: null, tags: [],
+};
+
 // --- summarySchema ---
 
 test("summarySchema rejects a final summary with unfinished prose or Markdown", () => {
   expect(
     summarySchema.safeParse({
       tldr: "A complete overview.",
-      summary: "The **`hidden=",
+      bullets: ["The **hidden="],
+      steps: ["Try it."],
+      applicationNote: null,
       tags: ["html"],
     }).success
   ).toBe(false);
@@ -26,13 +32,13 @@ test("summarySchema rejects a final summary with unfinished prose or Markdown", 
 // --- normalizePartial ---
 
 test("normalizePartial fills missing fields with safe defaults", () => {
-  expect(normalizePartial({})).toEqual({ tldr: "", summary: "", tags: [] });
+  expect(normalizePartial({})).toEqual({ tldr: "", bullets: [], steps: [], applicationNote: null, tags: [] });
 });
 
 test("normalizePartial passes through complete partials", () => {
   expect(
-    normalizePartial({ tldr: "x", summary: "y", tags: ["a", "b"] })
-  ).toEqual({ tldr: "x", summary: "y", tags: ["a", "b"] });
+    normalizePartial({ tldr: "x", bullets: ["y"], steps: ["z"], applicationNote: null, tags: ["a", "b"] })
+  ).toEqual({ tldr: "x", bullets: ["y"], steps: ["z"], applicationNote: null, tags: ["a", "b"] });
 });
 
 test("normalizePartial drops non-string tags from an in-progress array", () => {
@@ -40,7 +46,7 @@ test("normalizePartial drops non-string tags from an in-progress array", () => {
   // nulls/numbers before it settles.
   expect(
     normalizePartial({ tags: ["ok", null, 3, undefined] } as never)
-  ).toEqual({ tldr: "", summary: "", tags: ["ok"] });
+  ).toEqual({ tldr: "", bullets: [], steps: [], applicationNote: null, tags: ["ok"] });
 });
 
 // --- buildSystemPrompt ---
@@ -143,7 +149,9 @@ function jsonTextStream(obj: unknown, cost: unknown = "0.000053") {
 test("streamSummary streams partials and returns the validated object", async () => {
   const expected: Summary = {
     tldr: "The bottom line in two sentences.",
-    summary: "An expanded summary with **bold** phrases and reasoning.",
+    bullets: ["An expanded summary with **bold** phrases and reasoning."],
+    steps: ["Try one idea today."],
+    applicationNote: null,
     tags: ["technology", "ai"],
   };
 
@@ -177,12 +185,16 @@ test("streamSummary streams partials and returns the validated object", async ()
 test("streamSummary retries once when the final summary is incomplete", async () => {
   const incomplete: Summary = {
     tldr: "A complete overview.",
-    summary: "The **`hidden=",
+    bullets: ["The **hidden="],
+    steps: ["Try it."],
+    applicationNote: null,
     tags: ["html"],
   };
   const expected: Summary = {
     tldr: "A complete overview.",
-    summary: "The `hidden` attribute reveals matching content.",
+    bullets: ["The **hidden** attribute reveals matching content."],
+    steps: ["Try it."],
+    applicationNote: null,
     tags: ["html"],
   };
   let attempts = 0;
@@ -208,25 +220,24 @@ test("streamSummary retries once when the final summary is incomplete", async ()
   expect(result.costUsd).toBe(0.000106);
 });
 
-test("streamSummary preserves repaired formatting in partials and final storage", async () => {
-  const summary = "* First point. * Second point. ## Apply this to your life 1. Review this. 2. Try that.";
-  const expected = "* First point.\n* Second point.\n\n## Apply this to your life\n\n1. Review this.\n2. Try that.";
+test("streamSummary preserves arrays and inline bold in partials and final results", async () => {
+  const expected: Summary = { ...completeSummary, bullets: ["First **point**.", "Second point."], steps: ["Review this.", "Try that."] };
   const partials: Summary[] = [];
   const model = new MockLanguageModelV4({
-    doStream: async () => ({ stream: jsonTextStream({ tldr: "Overview.", summary, tags: [] }) }),
+    doStream: async () => ({ stream: jsonTextStream(expected) }),
   });
   const result = await streamSummary({ model, system: "system", prompt: "page", onPartial: (p) => partials.push(p) });
-  expect(result.summary.summary).toBe(expected);
-  expect(partials.at(-1)?.summary).toBe(expected);
+  expect(result.summary).toEqual(expected);
+  expect(partials.at(-1)).toEqual(expected);
+  expect(partials.every((p) => Array.isArray(p.bullets) && Array.isArray(p.steps))).toBe(true);
 });
-
 
 test.each([null, "", "not-a-cost", -1, {}, true])(
   "streamSummary keeps invalid or missing Gateway cost unknown: %p",
   async (cost) => {
     const model = new MockLanguageModelV4({
       doStream: async () => ({
-        stream: jsonTextStream({ tldr: "Overview.", summary: "Summary.", tags: [] }, cost),
+        stream: jsonTextStream(completeSummary, cost),
       }),
     });
     const result = await streamSummary({ model, system: "system", prompt: "page" });
@@ -237,7 +248,7 @@ test.each([null, "", "not-a-cost", -1, {}, true])(
 test("streamSummary preserves a reported zero cost", async () => {
   const model = new MockLanguageModelV4({
     doStream: async () => ({
-      stream: jsonTextStream({ tldr: "Overview.", summary: "Summary.", tags: [] }, 0),
+      stream: jsonTextStream(completeSummary, 0),
     }),
   });
   const result = await streamSummary({ model, system: "system", prompt: "page" });
@@ -249,8 +260,8 @@ test("streamSummary does not undercount cost when an earlier attempt has no cost
   const model = new MockLanguageModelV4({
     doStream: async () => ({
       stream: attempt++ === 0
-        ? jsonTextStream({ tldr: "Overview.", summary: "Unfinished", tags: [] }, null)
-        : jsonTextStream({ tldr: "Overview.", summary: "Summary.", tags: [] }),
+        ? jsonTextStream({ ...completeSummary, bullets: ["Unfinished"] }, null)
+        : jsonTextStream(completeSummary),
     }),
   });
   const result = await streamSummary({ model, system: "system", prompt: "page" });
