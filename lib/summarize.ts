@@ -7,6 +7,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import type { SummaryDiagnosticEvent } from "./summary-diagnostics";
+import { normalizeSummaryMarkdown } from "./summary-markdown";
 
 // Structured shape the model fills in — replaces the old delimiter parsing.
 const summaryOutputSchema = z.object({
@@ -109,7 +110,7 @@ export function normalizePartial(partial: {
 }): Summary {
   return {
     tldr: typeof partial?.tldr === "string" ? partial.tldr : "",
-    summary: typeof partial?.summary === "string" ? partial.summary : "",
+    summary: typeof partial?.summary === "string" ? normalizeSummaryMarkdown(partial.summary) : "",
     tags: Array.isArray(partial?.tags)
       ? partial.tags.filter((tag): tag is string => typeof tag === "string")
       : [],
@@ -327,7 +328,7 @@ export async function streamSummary({
 
     await emit({ event: "attempt-succeeded", ...finishedContext });
     return {
-      summary: validation.data,
+      summary: { ...validation.data, summary: normalizeSummaryMarkdown(validation.data.summary) },
       usage: totalUsage,
       costUsd: totalCostUsd,
     };

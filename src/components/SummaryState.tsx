@@ -10,6 +10,7 @@ import { Copy, BookOpen } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { ApplyPrompt } from "./ApplyPrompt";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { normalizeSummaryMarkdown } from "../../lib/summary-markdown";
 
 interface SummaryStateProps {
   tldr: string | null;
@@ -75,9 +76,9 @@ export function SummaryState({
   const [showReadwise, setShowReadwise] = useState(false);
   const [readwiseEnabled, setReadwiseEnabled] = useState(false);
 
-  // Structured fields arrive directly from the model — no parsing required.
+  // Also repair summaries already cached by an older extension version.
   const tldrText = tldr;
-  const summaryText = summary;
+  const summaryText = normalizeSummaryMarkdown(summary);
   const suggestedTags = tags;
   const showMetadata = Boolean(metadata?.duration || metadata?.channel || metadata?.hasTranscript);
 

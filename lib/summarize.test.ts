@@ -208,6 +208,18 @@ test("streamSummary retries once when the final summary is incomplete", async ()
   expect(result.costUsd).toBe(0.000106);
 });
 
+test("streamSummary preserves repaired formatting in partials and final storage", async () => {
+  const summary = "* First point. * Second point. ## Apply this to your life 1. Review this. 2. Try that.";
+  const expected = "* First point.\n* Second point.\n\n## Apply this to your life\n\n1. Review this.\n2. Try that.";
+  const partials: Summary[] = [];
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({ stream: jsonTextStream({ tldr: "Overview.", summary, tags: [] }) }),
+  });
+  const result = await streamSummary({ model, system: "system", prompt: "page", onPartial: (p) => partials.push(p) });
+  expect(result.summary.summary).toBe(expected);
+  expect(partials.at(-1)?.summary).toBe(expected);
+});
+
 
 test.each([null, "", "not-a-cost", -1, {}, true])(
   "streamSummary keeps invalid or missing Gateway cost unknown: %p",

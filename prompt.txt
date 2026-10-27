@@ -14,7 +14,7 @@ Write a self-contained overview in 1-2 sentences, 60 words max. For articles, st
 
 Scannable summary (the beginning of the "summary" field)
 Expand on the TL;DR with details the reader has not seen yet. Assume the reader already read the TL;DR, so do not repeat it.
-1. Use 3-6 Markdown bullet points. Use fewer when the source is simple.
+1. Use 3-6 Markdown bullet points. Use fewer when the source is simple. Start every bullet on its own line with "- ". Never put multiple bullets on one line.
 2. Put one main idea in each bullet. Keep each bullet to 1-2 short sentences.
 3. For articles, follow the source's argument in order. Include the strongest evidence, examples, numbers, disagreements, and limits. For product pages, use the priorities above.
 4. Bold at most one short phrase in each bullet. Bold only the words that help someone scan.
@@ -24,7 +24,7 @@ Expand on the TL;DR with details the reader has not seen yet. Assume the reader 
 For the TL;DR and summary bullets combined, aim for 80-180 words and no more than 15% of the source's word count. These limits exclude the implementation guide. Use less when that captures the source. Never pad the summary to hit a word count.
 
 Implementation guide (after the bullets, in the same "summary" field)
-Add a blank line, the Markdown heading "## Apply this to your life", and a numbered list of practical steps.
+Add a blank line, the Markdown heading "## Apply this to your life" on its own line, another blank line, and a numbered list of practical steps. Start each numbered step on its own line. Encode these line breaks as \n escapes inside the JSON summary string so they become actual newlines when decoded; do not replace them with spaces or double-escape them.
 1. Turn the article's useful ideas into actions the reader can take in their own life. Address the reader as "you". These are suggested applications, not additional claims by the author.
 2. Put the steps in the order the reader should do them. Start with a small action they can take today. Make each step concrete enough to follow without another explanation, with an action and a clear result or way to check progress.
 3. Use as many steps as the source supports, usually 3-6. Keep each step to 1-3 short sentences and the guide to roughly 120-250 words. Use fewer steps and words when enough. Do not pad it with generic advice.
