@@ -63,15 +63,17 @@ You can customize these shortcuts in Chrome by going to:
 Edit `config.ts` to change the web-page summarization model:
 
 ```ts
-model: "google/gemini-3.5-flash-lite",
-reasoning: "minimal",
+model: "openai/gpt-6.1-terra",
+reasoning: "low",
+providerOptions: { gateway: { only: ["openai"] } },
 ```
 
 Use a model ID from the [AI Gateway catalog](https://vercel.com/ai-gateway/models).
 When switching models, choose a reasoning level that model supports, or set
-`reasoning` to `"provider-default"`. The same file controls the input character
-limit and output token budget. The current 4,096-token output limit leaves room
-for the summary and minimal reasoning; it is a ceiling, not a target length.
+`reasoning` to `"provider-default"`. Update or remove the provider restriction
+when switching away from OpenAI. The same file controls the input character
+limit and output token budget. The current 16,384-token output limit leaves room
+for the summary and reasoning; it is a ceiling, not a target length.
 
 After editing, run `bun run build` and reload the extension on
 `chrome://extensions/`. These settings apply to web pages; YouTube continues to
@@ -113,6 +115,25 @@ Create an API key in your [Vercel AI Gateway dashboard](https://vercel.com/dashb
 and save it in the extension's options page. The extension stores it under
 `gatewayApiKey` in Chrome sync storage and sends requests directly to
 `https://ai-gateway.vercel.sh` from its service worker.
+
+### OpenAI credits through BYOK
+
+1. Confirm your credits are in the OpenAI API organization that owns your key.
+2. In the same Vercel team that owns the extension's Gateway key, open
+   **AI Gateway → Bring Your Own Key → OpenAI → Add Key**. Add the OpenAI key,
+   test it, and confirm it is enabled and marked **In Use**.
+3. Keep the **Vercel AI Gateway key** in the extension settings. The OpenAI key
+   stays in Vercel; do not put it in the extension, source code, or bundle.
+4. Rebuild and reload, summarize a page, and check **AI Gateway → Logs** for
+   the OpenAI provider and BYOK credential source. Confirm credit usage in the
+   OpenAI organization's billing dashboard.
+
+[Vercel BYOK](https://vercel.com/docs/ai-gateway/authentication-and-byok/byok)
+requires purchased Gateway credits. If your OpenAI credential fails, Gateway
+can fall back to its own credentials and charge your Gateway balance, even with
+`only: ["openai"]`. A successful summary alone does not prove that OpenAI credits
+paid for it. Dashboard BYOK credentials apply across the Vercel team; when
+multiple OpenAI keys are enabled, Gateway uses the oldest enabled key.
 
 If upgrading from the Anthropic version, enter a Gateway key after reloading.
 The old Anthropic key is not reused or sent to Vercel. Readwise settings are

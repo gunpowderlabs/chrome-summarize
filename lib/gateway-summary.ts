@@ -20,11 +20,12 @@ export async function summarizePage({
   fetch?: NonNullable<Parameters<typeof createGateway>[0]>["fetch"];
 }) {
   const gateway = createGateway({ apiKey, fetch });
-  const { model, reasoning, maxOutputTokens, maxInputCharacters } =
+  const { model, reasoning, providerOptions, maxOutputTokens, maxInputCharacters } =
     summarizationConfig;
   const result = await streamSummary({
     model: gateway(model),
     reasoning,
+    providerOptions,
     maxOutputTokens,
     system,
     prompt: content.slice(0, maxInputCharacters),

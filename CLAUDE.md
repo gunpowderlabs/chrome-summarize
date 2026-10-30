@@ -78,7 +78,8 @@ bun run install-native-host
 - Summarization uses the **Vercel AI SDK** (`ai`, including its built-in Gateway provider) via `streamObject` for structured, streaming output — `{ tldr, bullets, steps, applicationNote, tags }` validated by a Zod schema in `lib/summarize.ts`
 - Calls Vercel AI Gateway directly from the service worker using `createGateway` and the saved `gatewayApiKey`
 - `lib/gateway-summary.ts` applies `config.ts`; Gateway response metadata supplies request costs
-- Default model: `google/gemini-3.5-flash-lite`, with minimal reasoning (editable in `config.ts`)
+- Default model: `openai/gpt-6.1-terra`, with low reasoning (editable in `config.ts`)
+- Gateway routing is restricted to `openai` to use the team's OpenAI BYOK credential. Provider keys are configured in Vercel, not the extension. This restriction does not disable Gateway's fallback to system credentials; check Gateway Logs for the credential source and OpenAI billing for credit usage.
 - The service worker is bundled separately (`vite.config.background.ts`) so the SDK is inlined — MV3 service workers can't resolve npm deps at runtime
 - Readwise API for article saving and tag management
 

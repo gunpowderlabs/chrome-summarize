@@ -34,7 +34,8 @@ test("summarizePage sends configured structured requests through the real Gatewa
       expect(headers.get("ai-language-model-streaming")).toBe("true");
       expect(headers.has("anthropic-dangerous-direct-browser-access")).toBe(false);
       const body = JSON.parse(init?.body as string);
-      expect(body.reasoning).toBe("minimal");
+      expect(body.reasoning).toBe("low");
+      expect(body.providerOptions.gateway.only).toEqual(["openai"]);
       expect(body.maxOutputTokens).toBe(summarizationConfig.maxOutputTokens);
       expect(body.temperature).toBeUndefined();
       expect(body.prompt[0].content).toBe("Summarize faithfully.");
@@ -62,7 +63,7 @@ test("summarizePage sends configured structured requests through the real Gatewa
     },
   });
   expect(requests).toBe(1);
-  expect(result.model).toBe("google/gemini-3.5-flash-lite");
+  expect(result.model).toBe("openai/gpt-6.1-terra");
   expect(result.summary).toEqual(expected);
   expect(result.costUsd).toBe(0.000155);
   expect(partials.length).toBeGreaterThan(1);
